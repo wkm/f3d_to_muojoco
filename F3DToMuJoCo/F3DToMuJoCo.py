@@ -36,6 +36,14 @@ class Exporter:
         except:
             pass # Fail silently if palette not found
 
+    def get_parent_occurrence(self, occ):
+        # Helper to safely get the parent occurrence
+        # Returns None if the parent is the Root Component
+        try:
+            return occ.assemblyContext
+        except:
+            return None
+
     def validate_design(self):
         # Check 1: Naming Conflicts
         name_counts = {}
@@ -61,8 +69,8 @@ class Exporter:
             if not occ1 or not occ2: continue
             
             # Check if they share the same parent
-            parent1 = occ1.parentOccurrence
-            parent2 = occ2.parentOccurrence
+            parent1 = self.get_parent_occurrence(occ1)
+            parent2 = self.get_parent_occurrence(occ2)
             
             # If parents are same (both None=Root, or both same sub-assembly), it's a sibling joint
             if parent1 == parent2:
