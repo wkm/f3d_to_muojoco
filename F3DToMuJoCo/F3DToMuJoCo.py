@@ -253,7 +253,15 @@ class Exporter:
             if not app and occ.component.material:
                 app = occ.component.material.appearance
 
+            # 4. Check first body in component
+            if not app and occ.component.bRepBodies.count > 0:
+                app = occ.component.bRepBodies.item(0).appearance
+
             if not app:
+                if not self._debug_logged:
+                    self.log(f"--- DEBUG: No appearance found for component {occ.component.name} ---")
+                    # Note: We don't set self._debug_logged to True yet, 
+                    # we want to see the first occurrence that DOES have an app.
                 return default_rgba
 
             # DEBUG LOGGING (Once)
