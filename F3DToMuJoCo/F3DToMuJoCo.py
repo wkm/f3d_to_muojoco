@@ -36,7 +36,64 @@ class Exporter:
         except:
             pass # Fail silently if palette not found
 
+    def validate_design(self):
+        # Check 1: Naming Conflicts
+        name_counts = {}
+        duplicates = []
+        for comp in self.design.allComponents:
+            name = comp.name
+            if name in name_counts:
+                name_counts[name] += 1
+                if name_counts[name] == 2: # Only add to list once
+                    duplicates.append(name)
+            else:
+                name_counts[name] = 1
+        
+        # Check 2: Flat Hierarchy (Joints between siblings)
+        flat_joints = []
+        for joint in self.root_comp.allJoints:
+            if not joint.jointMotion: continue
+            
+            occ1 = joint.occurrenceOne
+            occ2 = joint.occurrenceTwo
+            
+            # Skip if joint connects to Root (one occ is None) - this is usually fine (grounded)
+            if not occ1 or not occ2: continue
+            
+            # Check if they share the same parent
+            parent1 = occ1.parentOccurrence
+            parent2 = occ2.parentOccurrence
+            
+            # If parents are same (both None=Root, or both same sub-assembly), it's a sibling joint
+            if parent1 == parent2:
+                flat_joints.append(f"{joint.name} (connects siblings '{occ1.name}' and '{occ2.name}')")
+
+        # Construct Warning Message
+        msg = ""
+        if duplicates:
+            msg += "CRITICAL: Duplicate Component Names found!\n"
+            msg += "This will cause mesh files to overwrite each other.\n"
+            msg += f"Duplicates: {', '.join(duplicates[:5])}...\n\n"
+            
+        if flat_joints:
+            msg += "WARNING: Flat Hierarchy / Sibling Joints detected.\n"
+            msg += "The exporter expects a nested hierarchy matching the kinematic chain.\n"
+            msg += "Joints between sibling components may NOT be exported correctly.\n"
+            msg += "Please drag child components INSIDE their parent components in the Browser.\n"
+            msg += f"Affected Joints: {', '.join(flat_joints[:5])}...\n\n"
+
+        if msg:
+            msg += "Do you want to continue anyway?"
+            res = self.app.userInterface.messageBox(msg, 'Pre-flight Validation', adsk.core.MessageBoxButtonTypes.YesNoButtonType, adsk.core.MessageBoxIconTypes.WarningIconType)
+            return res == adsk.core.DialogResults.DialogYes
+            
+        return True
+
     def export_all(self):
+        # 1. Validation
+        if not self.validate_design():
+            return
+
         progress = self.app.userInterface.createProgressDialog()
         try:
             self.log(f"Starting export to: {self.export_path}")
