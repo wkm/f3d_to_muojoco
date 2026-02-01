@@ -155,6 +155,12 @@ class Exporter:
         # Add basic compiler and asset settings
         compiler = ET.SubElement(root_elem, 'compiler', {'angle': 'radian', 'meshdir': 'meshes'})
         
+        # Add visual settings for better lighting
+        visual = ET.SubElement(root_elem, 'visual')
+        ET.SubElement(visual, 'headlight', {'ambient': '.4 .4 .4', 'diffuse': '.8 .8 .8', 'specular': '0.1 0.1 0.1'})
+        ET.SubElement(visual, 'map', {'znear': '0.01'})
+        ET.SubElement(visual, 'quality', {'shadowsize': '2048'})
+
         # Add assets (meshes)
         asset = ET.SubElement(root_elem, 'asset')
         for comp in self.design.allComponents:
@@ -166,9 +172,9 @@ class Exporter:
         # Worldbody and recursively add bodies
         worldbody = ET.SubElement(root_elem, 'worldbody')
         
-        # Add a floor and light for basic scene setup
-        ET.SubElement(worldbody, 'light', {'diffuse': '.5 .5 .5', 'pos': '0 0 3', 'dir': '0 0 -1'})
-        ET.SubElement(worldbody, 'geom', {'type': 'plane', 'size': '5 5 0.1', 'rgba': '.9 .9 .9 1'})
+        # Add a floor and directional light
+        ET.SubElement(worldbody, 'light', {'directional': 'true', 'diffuse': '.8 .8 .8', 'pos': '0 0 10', 'dir': '0 0 -1'})
+        ET.SubElement(worldbody, 'geom', {'name': 'floor', 'type': 'plane', 'size': '5 5 0.1', 'rgba': '.9 .9 .9 1'})
 
         # Initialize recursion with Identity matrix (World Frame)
         identity_transform = adsk.core.Matrix3D.create()
