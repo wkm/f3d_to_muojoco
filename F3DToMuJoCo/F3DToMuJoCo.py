@@ -29,6 +29,7 @@ class Exporter:
 
     def log(self, message):
         try:
+            print(f"[F3DToMuJoCo] {message}")
             # Write to the Text Commands palette
             text_palette = self.app.userInterface.palettes.itemById('TextCommands')
             if text_palette:
@@ -176,6 +177,34 @@ class Exporter:
         # Add a floor and directional light
         ET.SubElement(worldbody, 'light', {'directional': 'true', 'diffuse': '.8 .8 .8', 'pos': '0 0 10', 'dir': '0 0 -1'})
         ET.SubElement(worldbody, 'geom', {'name': 'floor', 'type': 'plane', 'size': '5 5 0.1', 'rgba': '.9 .9 .9 1'})
+
+        # Add skybox and ground textures/materials
+        ET.SubElement(asset, 'texture', {
+            'type': 'skybox',
+            'builtin': 'gradient',
+            'rgb1': '0.3 0.5 0.7',
+            'rgb2': '0 0 0',
+            'width': '512',
+            'height': '3072'
+        })
+        ET.SubElement(asset, 'texture', {
+            'type': '2d',
+            'name': 'groundplane',
+            'builtin': 'checker',
+            'mark': 'edge',
+            'rgb1': '0.2 0.3 0.4',
+            'rgb2': '0.1 0.2 0.3',
+            'markrgb': '0.8 0.8 0.8',
+            'width': '300',
+            'height': '300'
+        })
+        ET.SubElement(asset, 'material', {
+            'name': 'groundplane',
+            'texture': 'groundplane',
+            'texuniform': 'true',
+            'texrepeat': '5 5',
+            'reflectance': '0.2'
+        })
 
         # Initialize recursion with Identity matrix (World Frame)
         identity_transform = adsk.core.Matrix3D.create()
@@ -490,8 +519,11 @@ def run(context):
         _app = adsk.core.Application.get()
         _ui  = _app.userInterface
         
+        # Confirmation that script is running
+        _ui.palettes.itemById('TextCommands').writeText("[F3DToMuJoCo] SCRIPT RELOADED - VERSION 0.1.5 - DEBUG MODE ACTIVE")
+        print("[F3DToMuJoCo] SCRIPT RELOADED - VERSION 0.1.5")
+        
         # PREVENT EARLY TERMINATION
-        # This keeps the script alive so the Command can run
         adsk.autoTerminate(False)
         
         # Create the command definition
