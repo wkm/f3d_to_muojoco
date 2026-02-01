@@ -615,7 +615,7 @@ class Exporter:
         ET.SubElement(body_elem, 'geom', {
             'name': f"debug_joint_{self.clean_name(joint.name)}",
             'type': 'sphere',
-            'size': '0.01',
+            'size': '0.05',
             'rgba': '1 0 0 1',
             'pos': pos_str
         })
