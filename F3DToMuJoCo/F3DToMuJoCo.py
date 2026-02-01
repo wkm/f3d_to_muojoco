@@ -275,7 +275,13 @@ class Exporter:
                 clean_body_name = self.clean_name(body.name)
                 mesh_name = f"{clean_comp_name}_{clean_body_name}"
                 
-                ET.SubElement(asset, 'mesh', {'name': mesh_name, 'file': f"{mesh_name}.stl"})
+                # Fusion exports STLs in cm. MuJoCo expects meters.
+                # We must scale the mesh down by 0.01.
+                ET.SubElement(asset, 'mesh', {
+                    'name': mesh_name, 
+                    'file': f"{mesh_name}.stl",
+                    'scale': '0.01 0.01 0.01'
+                })
 
         # Worldbody and recursively add bodies
         worldbody = ET.SubElement(root_elem, 'worldbody')
