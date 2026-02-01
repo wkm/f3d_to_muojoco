@@ -181,16 +181,12 @@ class Exporter:
         
         # ROOT WRAPPER FOR COORDINATE CORRECTION
         # Fusion 360 often defaults to Y-Up. MuJoCo is Z-Up.
-        # We wrap the entire robot in a body that rotates +90 degrees around X
-        # to align Fusion's Y-axis with MuJoCo's Z-axis.
-        # Note: If the user is in Z-Up mode, this might be redundant/wrong, 
-        # but since there's no reliable API check for the *document's* up-axis (only prefs),
-        # we'll assume the standard Y-Up or let the user manually edit this single value.
+        # However, STL export often respects the internal Z-Up data or the user has verified STLs are Up.
+        # Also, <compiler angle="radian"> makes "90" interpreted as 90 radians.
+        # We set this to 0 0 0. If a user needs to rotate the entire model, they can edit this "root_adapter".
         
         # Creating a "root_adapter" body
-        # Euler order in MuJoCo default is "xyz". 
-        # Rotate 90 deg (1.57 rad) around X.
-        root_adapter = ET.SubElement(worldbody, 'body', {'name': 'root_adapter', 'pos': '0 0 0', 'euler': '90 0 0'})
+        root_adapter = ET.SubElement(worldbody, 'body', {'name': 'root_adapter', 'pos': '0 0 0', 'euler': '0 0 0'})
         
         # Recursively process occurrences, attaching them to the ADAPTER
         for occ in self.root_comp.occurrences:
