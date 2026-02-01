@@ -237,34 +237,54 @@ class Exporter:
             self.process_occurrence(child_occ, body, current_world_transform, occ)
 
     def get_appearance_rgba(self, occ):
-        # Default Gray
-        default_rgba = "0.7 0.7 0.7 1.0"
+        # Emergency Orange (Fallback)
+        default_rgba = "1.0 0.5 0.0 1.0"
+        
         try:
-            # Check occurrence first, then component
+            # 1. Check Occurrence Override
             app = occ.appearance
+            
+            # 2. Check Component Default
             if not app:
                 app = occ.component.appearance
             
+            # 3. Check Physical Material Appearance
+            if not app and occ.component.material:
+                app = occ.component.material.appearance
+
             if not app:
                 return default_rgba
-                
-            # Look for color property
-            # Fusion appearances have different property names based on the material type
-            # 'color_base' is common for modern 'Advanced' materials
-            prop = app.appearanceProperties.itemById('color_base')
-            if not prop:
-                # Fallback for older materials
-                prop = app.appearanceProperties.itemById('opaque_albedo')
-            
-            if prop:
-                color_prop = adsk.core.ColorProperty.cast(prop)
-                if color_prop and color_prop.value:
-                    color = color_prop.value
-                    return f"{color.red/255.0} {color.green/255.0} {color.blue/255.0} {color.opacity/255.0}"
+
+            color_val = self.find_color_in_appearance(app)
+            if color_val:
+                return f"{color_val.red/255.0} {color_val.green/255.0} {color_val.blue/255.0} {color_val.opacity/255.0}"
             
             return default_rgba
         except:
             return default_rgba
+
+    def find_color_in_appearance(self, app):
+        # Priority list of property names
+        priority_names = ['color_base', 'Color', 'opaque_albedo', 'metal_f0']
+        
+        # 1. Search for priority properties
+        for name in priority_names:
+            prop = app.appearanceProperties.itemByName(name)
+            if prop:
+                # Check if it's a color property (some might be floats/ints)
+                # We try to cast it
+                color_prop = adsk.core.ColorProperty.cast(prop)
+                if color_prop and color_prop.value:
+                    return color_prop.value
+        
+        # 2. Fallback: Search ALL properties for ANY ColorProperty
+        for prop in app.appearanceProperties:
+            if prop.constructor.name == 'adsk::core::ColorProperty':
+                 color_prop = adsk.core.ColorProperty.cast(prop)
+                 if color_prop and color_prop.value:
+                     return color_prop.value
+        
+        return None
 
     def process_inertial(self, comp, body_elem):
         try:
