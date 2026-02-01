@@ -274,17 +274,12 @@ class Exporter:
         app = occ.appearance
         if app: self.log(f"Found appearance on Occurrence: {app.name}")
         
-        # 2. Check Component Default
-        if not app:
-            app = occ.component.appearance
-            if app: self.log(f"Found appearance on Component: {app.name}")
-        
-        # 3. Check Physical Material Appearance
+        # 2. Check Physical Material Appearance
         if not app and occ.component.material:
             app = occ.component.material.appearance
             if app: self.log(f"Found appearance on Material: {app.name}")
 
-        # 4. Check first body in component
+        # 3. Check first body in component
         if not app and occ.component.bRepBodies.count > 0:
             app = occ.component.bRepBodies.item(0).appearance
             if app: self.log(f"Found appearance on Body: {app.name}")
