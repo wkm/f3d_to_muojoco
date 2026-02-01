@@ -444,17 +444,22 @@ class Exporter:
             # Fallback if physical properties fail (e.g. empty component)
             pass
 
+    def get_token(self, obj):
+        # Safely get entityToken for comparison
+        try:
+            return obj.entityToken if obj else "ROOT"
+        except:
+            return "UNKNOWN"
+
     def process_joints(self, occ, body_elem, target_parent):
         # Look for a joint that connects 'occ' to 'target_parent'
+        self.log(f"Searching joints for occurrence: {occ.name}")
+        self.log(f"  Target Parent: {target_parent.name if hasattr(target_parent, 'name') else 'Root'}")
         
-        # We search ALL joints in the Root Component context to find the relevant one.
-        # This covers joints created at the top level.
-        # Note: If joints are created inside sub-assemblies, we might need to search occ.component.allJoints too?
-        # For now, assuming most joints are defined in the context of the assembly structure being exported.
+        occ_token = self.get_token(occ)
+        parent_token = self.get_token(target_parent)
         
-        # Optimization: accessing root_comp.allJoints can be slow if many joints.
-        # But Fusion API doesn't easily let us filter "joints involving this occurrence".
-        
+        found_joint = False
         for joint in self.root_comp.allJoints:
             if not joint.jointMotion: continue
             
@@ -463,13 +468,24 @@ class Exporter:
             o2 = joint.occurrenceTwo
             
             # Normalize 'None' to root_comp for comparison
-            # (If a joint is connected to the Root Component, occurrenceOne/Two is Null/None)
             c1 = o1 if o1 else self.root_comp
             c2 = o2 if o2 else self.root_comp
             
-            if (c1 == occ and c2 == target_parent) or (c2 == occ and c1 == target_parent):
+            c1_token = self.get_token(c1)
+            c2_token = self.get_token(c2)
+            
+            # Match tokens
+            match = (c1_token == occ_token and c2_token == parent_token) or \
+                    (c2_token == occ_token and c1_token == parent_token)
+            
+            if match:
+                self.log(f"  MATCH FOUND: Joint '{joint.name}' connects '{occ.name}' to its parent.")
                 self.add_joint_to_xml(joint, occ, body_elem)
-                break # MJCF tree only supports one kinematic joint per body-parent pair
+                found_joint = True
+                break 
+        
+        if not found_joint:
+            self.log(f"  No joint found connecting '{occ.name}' to its expected parent.")
 
     def add_joint_to_xml(self, joint, child_occ, body_elem):
         motion = joint.jointMotion
