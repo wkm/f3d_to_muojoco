@@ -25,6 +25,18 @@ class Exporter:
         self.design = self.app.activeProduct
         self.export_mgr = self.design.exportManager
         self.root_comp = self.design.rootComponent
+        
+        self._collect_all_joints()
+
+    def _collect_all_joints(self):
+        # Flatten all joints in the design into one list
+        self.all_joints = []
+        try:
+            for comp in self.design.allComponents:
+                for joint in comp.allJoints:
+                    self.all_joints.append(joint)
+        except:
+            pass # Fail safe
 
     def log(self, message):
         try:
@@ -453,14 +465,15 @@ class Exporter:
 
     def process_joints(self, occ, body_elem, target_parent):
         # Look for a joint that connects 'occ' to 'target_parent'
-        self.log(f"Searching joints for occurrence: {occ.name}")
-        self.log(f"  Target Parent: {target_parent.name if hasattr(target_parent, 'name') else 'Root'}")
+        self.log(f"Searching joints for occurrence: {occ.fullPathName}")
+        target_name = target_parent.fullPathName if hasattr(target_parent, 'fullPathName') else "ROOT"
+        self.log(f"  Target Parent: {target_name}")
         
         occ_token = self.get_token(occ)
         parent_token = self.get_token(target_parent)
         
         found_joint = False
-        for joint in self.root_comp.allJoints:
+        for joint in self.all_joints:
             if not joint.jointMotion: continue
             
             # Check if this joint connects occ to its parent
@@ -468,6 +481,8 @@ class Exporter:
             o2 = joint.occurrenceTwo
             
             # Normalize 'None' to root_comp for comparison
+            # Note: If joint is in a sub-component, None might mean "Containing Component"
+            # But here we are comparing against occurrences in the assembly context.
             c1 = o1 if o1 else self.root_comp
             c2 = o2 if o2 else self.root_comp
             
