@@ -611,6 +611,15 @@ class Exporter:
             **extra_attrs
         })
 
+        # DEBUG: Visual Sphere at Joint Location
+        ET.SubElement(body_elem, 'geom', {
+            'name': f"debug_joint_{self.clean_name(joint.name)}",
+            'type': 'sphere',
+            'size': '0.01',
+            'rgba': '1 0 0 1',
+            'pos': pos_str
+        })
+
 class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
     def __init__(self):
         super().__init__()
