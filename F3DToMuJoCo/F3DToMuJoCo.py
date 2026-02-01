@@ -567,6 +567,21 @@ class Exporter:
         
         pos_str = f"{origin.x / 100.0} {origin.y / 100.0} {origin.z / 100.0}"
         
+        # DEBUG: Check Bounding Box vs Joint Pos
+        try:
+            bb = child_occ.boundingBox
+            self.log(f"  DEBUG Joint '{joint.name}':")
+            self.log(f"    Target Body: {child_occ.name}")
+            self.log(f"    World BB Center: {bb.minPoint.x/100:.3f},{bb.minPoint.y/100:.3f} to {bb.maxPoint.x/100:.3f},{bb.maxPoint.y/100:.3f}")
+            self.log(f"    Calc Local Pos: {pos_str}")
+            
+            # Transform Local Pos back to World for comparison?
+            check_pt = origin.copy()
+            check_pt.transformBy(child_occ.transform) # Local -> World
+            self.log(f"    Calc World Pos: {check_pt.x/100:.3f} {check_pt.y/100:.3f} {check_pt.z/100:.3f}")
+        except:
+            pass
+        
         # 4. Transform Axis: Parent -> World -> Child
         axis_vec = geom.primaryAxisVector.copy()
         axis_vec.transformBy(parent_to_world)
