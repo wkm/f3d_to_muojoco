@@ -25,6 +25,7 @@ class Exporter:
         self.design = self.app.activeProduct
         self.export_mgr = self.design.exportManager
         self.root_comp = self.design.rootComponent
+        self._debug_logged = False
 
     def log(self, message):
         try:
@@ -254,6 +255,20 @@ class Exporter:
 
             if not app:
                 return default_rgba
+
+            # DEBUG LOGGING (Once)
+            if not self._debug_logged:
+                self.log(f"--- DEBUG APPEARANCE: {app.name} ---")
+                for p in app.appearanceProperties:
+                    try:
+                         val_str = "N/A"
+                         if p.constructor.name == 'adsk::core::ColorProperty':
+                             c = adsk.core.ColorProperty.cast(p).value
+                             val_str = f"R:{c.red} G:{c.green} B:{c.blue}"
+                         self.log(f"Prop: {p.name} | ID: {p.id} | Type: {p.constructor.name} | Val: {val_str}")
+                    except:
+                        pass
+                self._debug_logged = True
 
             color_val = self.find_color_in_appearance(app)
             if color_val:
