@@ -32,9 +32,21 @@ class Exporter:
         # Flatten all joints in the design into one list
         self.all_joints = []
         try:
+            self.log("--- SCANNING ALL JOINTS ---")
             for comp in self.design.allComponents:
                 for joint in comp.allJoints:
                     self.all_joints.append(joint)
+                    
+                    # Debug logging
+                    try:
+                        o1 = joint.occurrenceOne
+                        o2 = joint.occurrenceTwo
+                        path1 = o1.fullPathName if o1 else "None"
+                        path2 = o2.fullPathName if o2 else "None"
+                        self.log(f"  Joint found: '{joint.name}' in '{comp.name}' | Occ1: {path1} | Occ2: {path2}")
+                    except:
+                        pass
+            self.log(f"--- TOTAL JOINTS FOUND: {len(self.all_joints)} ---")
         except:
             pass # Fail safe
 
