@@ -531,41 +531,42 @@ class Exporter:
         else:
             return # Rigid, Ball, etc. not handled yet
             
-        # Determine if child_occ is occurrenceOne or Two
-        # We need to grab the geometry associated with the CHILD side of the joint
-        # Fusion Docs: "Returns the joint geometry or origin for the first occurrence."
-        # If Child is Occ1, we use Geometry1.
-        is_one = (joint.occurrenceOne == child_occ)
+        # Strategy: Use the PARENT side of the joint to find the anchor point.
+        # Why? The Parent side geometry is defined in the Grandparent's coordinate space.
+        # For a top-level assembly, Grandparent is Root (World), which is reliable.
         
-        # However, we need the anchor point.
-        # Usually, for a hinge, the anchor is the same on both bodies (they overlap).
-        # We can grab either, BUT we must know which coordinate space it is in.
-        # Docs: "The point is returned in the coordinate space of the PARENT COMPONENT of the occurrence."
+        is_child_occ_one = (joint.occurrenceOne == child_occ)
         
-        geom = joint.geometryOrOriginOne if is_one else joint.geometryOrOriginTwo
+        # If Child is Occ1, Parent is Occ2. Use Geom2.
+        # If Child is Occ2, Parent is Occ1. Use Geom1.
+        parent_geom = joint.geometryOrOriginTwo if is_child_occ_one else joint.geometryOrOriginOne
         
-        # Coordinate Space Logic:
-        # geom.origin is in the Coordinate System of child_occ's PARENT.
-        # We want the position in the Coordinate System of child_occ (Local).
-        
-        # 1. Get Parent -> World Transform
+        # Parent Geom is in Grandparent Space.
+        # 1. Get Grandparent -> World
         parent_occ = self.get_parent_occurrence(child_occ)
-        if parent_occ:
-            parent_to_world = parent_occ.transform
+        grandparent_occ = self.get_parent_occurrence(parent_occ) if parent_occ else None
+        
+        if grandparent_occ:
+            grandparent_to_world = grandparent_occ.transform
         else:
-            parent_to_world = adsk.core.Matrix3D.create() # Identity (Root)
+            grandparent_to_world = adsk.core.Matrix3D.create() # Identity (Root)
 
         # 2. Get World -> Child Transform
-        # child_occ.transform is Child -> World
         world_to_child = child_occ.transform.copy()
         world_to_child.invert()
         
-        # 3. Transform Origin: Parent -> World -> Child
-        origin = geom.origin.copy()
-        origin.transformBy(parent_to_world) # Now in World
-        origin.transformBy(world_to_child)  # Now in Child Local
+        # 3. Transform Origin: Grandparent -> World -> Child
+        origin = parent_geom.origin.copy()
+        origin.transformBy(grandparent_to_world)
+        origin.transformBy(world_to_child)
         
         pos_str = f"{origin.x / 100.0} {origin.y / 100.0} {origin.z / 100.0}"
+        
+        # 4. Transform Axis: Same Logic
+        axis_vec = parent_geom.primaryAxisVector.copy()
+        axis_vec.transformBy(grandparent_to_world)
+        axis_vec.transformBy(world_to_child)
+        axis_str = f"{axis_vec.x} {axis_vec.y} {axis_vec.z}"
         
         # DEBUG: Check Bounding Box vs Joint Pos
         try:
@@ -581,13 +582,7 @@ class Exporter:
             self.log(f"    Calc World Pos: {check_pt.x/100:.3f} {check_pt.y/100:.3f} {check_pt.z/100:.3f}")
         except:
             pass
-        
-        # 4. Transform Axis: Parent -> World -> Child
-        axis_vec = geom.primaryAxisVector.copy()
-        axis_vec.transformBy(parent_to_world)
-        axis_vec.transformBy(world_to_child)
-        axis_str = f"{axis_vec.x} {axis_vec.y} {axis_vec.z}"
-        
+            
         # 5. Limits
         extra_attrs = {}
         if mj_type == "hinge":
