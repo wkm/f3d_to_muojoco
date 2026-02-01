@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="Simple2Wheel">
+  <compiler angle="radian" meshdir="meshes" />
+  <visual>
+    <headlight ambient=".4 .4 .4" diffuse=".8 .8 .8" specular="0.1 0.1 0.1" />
+    <map znear="0.01" />
+    <quality shadowsize="2048" />
+  </visual>
+  <asset>
+    <mesh name="body" file="body.stl" />
+    <mesh name="l_wheel" file="l_wheel.stl" />
+    <mesh name="r_wheel" file="r_wheel.stl" />
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072" />
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300" />
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2" />
+  </asset>
+  <worldbody>
+    <light directional="true" diffuse=".8 .8 .8" pos="0 0 10" dir="0 0 -1" />
+    <geom name="floor" type="plane" size="5 5 0.1" rgba=".9 .9 .9 1" />
+    <body name="root_adapter" pos="0 0 0" euler="1.5707963267948966 0 0">
+      <body name="body_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+        <geom type="mesh" mesh="body" rgba="0.9647058823529412 0.9647058823529412 0.9529411764705882 1.0" />
+      </body>
+      <body name="l_wheel_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+        <geom type="mesh" mesh="l_wheel" rgba="0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0" />
+      </body>
+      <body name="r_wheel_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+        <geom type="mesh" mesh="r_wheel" rgba="0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0" />
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

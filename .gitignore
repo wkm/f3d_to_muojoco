@@ -2,3 +2,4 @@
 .DS_Store
 *.f3d
 *.xml
+__pycache__

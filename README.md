@@ -1,102 +1,61 @@
 # F3DToMuJoCo
 
-A Fusion 360 Add-in to export designs directly to the MuJoCo MJCF (`.xml`) format, including meshes and kinematic definitions.
+A robust Fusion 360 Add-in that exports your CAD designs directly to **MuJoCo MJCF** format (`.xml`), complete with meshes, kinematics, physics, and visuals.
 
-## Installation and Usage
+## Features
 
-1.  **Locate the Add-in**: Ensure the `F3DToMuJoCo` folder is accessible on your system.
+- **Recursive Export**: Handles complex nested component hierarchies.
+- **Kinematics**:
+  - Automatically extracts **Revolute (Hinge)** and **Slider (Slide)** joints.
+  - Preserves joint limits and axes in the correct local coordinate frames.
+  - Supports Relative Transforms for deeply nested assemblies.
+- **Physics**:
+  - Extracts **Mass**, **Center of Mass**, and **Inertia Tensors** directly from Fusion's physical properties.
+- **Visuals**:
+  - Exports binary **STLs** for each component.
+  - Extracts **RGB Colors** from Fusion Appearances (supports Occurrences, Materials, and Bodies).
+  - Sets up a default MJCF scene with lighting and a floor.
+- **Coordinate Correction**:
+  - Automatically rotates models to align Fusion 360's default **Y-Up** with MuJoCo's **Z-Up**.
+
+## Installation
+
+1.  **Download**: Clone or download this repository to a safe location on your computer.
 2.  **Add to Fusion 360**:
-    *   Open Fusion 360.
-    *   Press `Shift + S` (or go to `Utilities > Scripts and Add-ins`).
-    *   Select the **Add-Ins** tab.
-    *   Click the **+** (Add) button under "My Add-Ins".
-    *   Select the `F3DToMuJoCo` folder.
+    - Open Fusion 360.
+    - Press `Shift + S` (or go to `Utilities > Scripts and Add-ins`).
+    - Select the **Scripts** tab.
+    - Click the green **+ (Add)** button.
+    - Select the `F3DToMuJoCo` folder (the folder containing the `.manifest` file).
 3.  **Run**:
-    *   Select `F3DToMuJoCo` from the list and click **Run**.
-    *   Select an output folder when prompted.
-    *   The MJCF `.xml` file and `meshes/` folder will be created in the selected directory.
-
-## Project Overview
-
-This tool aims to streamline the workflow from CAD (Fusion 360) to Simulation (MuJoCo). It functions similarly to existing URDF exporters but targets the specific features and structure of MJCF.
+    - Select `F3DToMuJoCo` from the list and click **Run**.
+    - Follow the prompts to select an output folder.
 
 ## Modeling Guidelines
 
-To ensure a successful export, follow these best practices in Fusion 360:
+To ensure the best results, follow these practices in Fusion 360:
 
-### 1. Naming Conventions
-*   **Uniqueness**: Ensure every **Component** in your browser tree has a unique name. Duplicate names will cause STL files to overwrite each other.
-*   **Characters**: Use `snake_case` (e.g., `base_link`, `arm_segment_1`). Avoid spaces, colons, and special symbols like `#`, `(`, `)`, or `/`.
-*   **Root Name**: The name of the Root Component will be used as the MuJoCo model name.
+### 1. Naming & Structure
 
-### 2. Assembly Structure
-*   **Components vs. Bodies**: The exporter creates a MuJoCo `<body>` for every **Component**. Multiple *Bodies* inside a single component will be merged into a single STL/Geom.
-*   **Hierarchy**: The exporter respects your assembly hierarchy. Nested components in Fusion will become nested `<body />` elements in MJCF.
+- **Unique Names**: Ensure every Component has a unique name. Duplicate names can cause mesh overwrites.
+- **Valid Characters**: Use `snake_case` (e.g., `base_link`, `shoulder_motor`). Avoid spaces and special characters.
+- **Root Name**: The Root Component name becomes the name of your MJCF model.
 
-### 3. Kinematics (Joints)
-*   **Supported Joints**: Use **Revolute** (mapped to `hinge`) and **Slider** (mapped to `slide`) joints.
-*   **Rigid Groups**: Components that are rigidly attached (no joint) will be "welded" in MuJoCo by being nested without a `<joint>` tag.
-*   **Anchor Points**: The joint origin in Fusion is used as the `pos` of the `<joint>` in MuJoCo. Ensure your joint origins are precisely placed.
+### 2. Joints
 
-## Architecture
+- **Define in Fusion**: Use standard Fusion 360 Joints (Revolute, Slider) to define motion.
+- **Rigid Groups**: Parts that don't move relative to each other should be separate components or rigidly joined. The exporter treats parent-child relationships without joints as rigid connections.
 
-The project is structured as a standard Fusion 360 Python Script/Add-in.
+### 3. Visuals & Physics
 
-```text
-F3DToMuJoCo/
-├── F3DToMuJoCo.manifest  # Plugin metadata (UUID, version, author)
-├── F3DToMuJoCo.py        # Entry point and main logic
-└── resources/            # Icons and UI assets
-```
+- **Physical Materials**: Assign materials (e.g., Aluminum, ABS) to your components to ensure correct Mass and Inertia values.
+- **Appearances**: Colors are extracted from the component's appearance or material. If your model appears "Emergency Orange" in MuJoCo, it means the exporter couldn't find a valid color property.
 
-## Technical Approach
+## Troubleshooting
 
-### 1. The Export Workflow
-1.  **UI Trigger**: The user clicks a button in the Fusion 360 "Utilities" or "Tools" tab.
-2.  **Configuration**: A dialog asks for the export directory and optional settings (e.g., mesh precision).
-3.  **Traversal**: The script recursively traverses the design hierarchy (Root Component -> Occurrences).
-4.  **Mesh Export**: Each unique component is exported as an `.stl` file to a `meshes/` subdirectory.
-5.  **MJCF Generation**: An XML tree is constructed in memory mirroring the assembly structure.
-6.  **Final Write**: The `.xml` file and meshes are saved to the target directory.
+- **Logs**: The exporter writes detailed logs to the **Text Commands** palette in Fusion 360 (`View > Show Text Commands` or `Alt+CMD+C`).
+- **Orientation**: If your model faces the wrong way, you can edit the `root_adapter` body rotation in the generated XML.
 
-### 2. Kinematic Mapping (Fusion -> MJCF)
+## License
 
-| Fusion 360 Concept | MuJoCo MJCF Concept | Implementation Details |
-| :--- | :--- | :--- |
-| **Component** | `<body>` | Nested within `worldbody` or parent bodies. |
-| **Body (Geometry)** | `<geom>` | Type `mesh`. References exported STLs. |
-| **Joint (Revolute)** | `<joint type="hinge">` | Axis and limits extracted from Fusion joint motion. |
-| **Joint (Slider)** | `<joint type="slide">` | Axis and limits extracted from Fusion joint motion. |
-| **Rigid Group** | Parent/Child (No Joint) | In MJCF, bodies nested without a joint are rigidly attached. |
-
-### 3. Coordinate Systems
-*   **Fusion 360**: Defaults to Y-up (usually), but can be Z-up.
-*   **MuJoCo**: strictly Z-up.
-*   **Strategy**: The exporter will check the Fusion document's "Up Axis". If it is Y-up, a root rotation (typically -90 deg on X) might be applied to the `worldbody`, or we will transform coordinates during extraction.
-
-### 4. Handling Joints
-Fusion 360 defines joints as relationships between two components. MJCF defines joints as degrees of freedom *within* a body relative to its parent.
-*   **Algorithm**:
-    1.  Traverse the occurrence tree.
-    2.  For each occurrence, check if it is the "Child" in any Fusion Joint.
-    3.  If a joint exists, extract its type (Revolute/Slider), axis, and anchor point relative to the component's origin.
-    4.  Insert the `<joint>` element into the corresponding MJCF `<body>`.
-
-### 5. Physical Properties & Materials
-*   **Inertia & Mass**: We will query the Fusion API for `physicalProperties` (mass, CoM, moment of inertia tensor) and generate an explicit `<inertial>` tag for each body. This is more accurate than letting MuJoCo approximate it from meshes.
-*   **Visuals**: We will extract the RGB color from the component's **Appearance** and apply it to the MJCF `<geom>`.
-*   **Collision**: For the MVP, we will use the visual meshes for collision. Future versions may support a "collision_*" naming convention to separate visual from collision geometry.
-*   **Friction/Damping**: Fusion does not provide simulation-ready friction coefficients. We will apply reasonable defaults (e.g., standard MuJoCo friction, small damping) to prevent unstable simulations.
-
-## Development Roadmap
-
-1.  **Scaffold**: Create the basic Add-in structure and Manifest.
-2.  **UI**: Implement a basic command button and "Select Folder" dialog.
-3.  **Mesh Export**: Implement the loop to export all leaf components as STLs.
-4.  **Tree Builder**: Implement the recursive XML builder for the component hierarchy.
-5.  **Joint logic**: precise math to extract joint origins and axes in the correct frame.
-6.  **Testing**: Verify against a simple 2-link arm and a mobile base.
-
-## References
-*   [Fusion 360 API Documentation](https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-A92A4B10-3781-4925-94C6-47DA85A4F65A)
-*   [MuJoCo XML Reference](https://mujoco.readthedocs.io/en/latest/XMLreference.html)
+MIT License
