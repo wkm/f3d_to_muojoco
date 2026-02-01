@@ -1,0 +1,4 @@
+*.stl
+.DS_Store
+*.f3d
+*.xml

@@ -1,0 +1,14 @@
+{
+	"autodeskProduct":	"Fusion360",
+	"type":	"script",
+	"author":	"Gemini Agent",
+	"description":	{
+		"":	"Exports Fusion 360 designs to MuJoCo MJCF format."
+	},
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true,
+	"id":	"49fdb8f2-b8e7-4925-94c6-47da85a4f65a",
+	"version":	"0.1.0",
+	"runOnStartup":	false,
+	"name":	"F3DToMuJoCo"
+}
