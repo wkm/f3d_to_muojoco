@@ -215,17 +215,46 @@ class Exporter:
         self.process_inertial(occ.component, body)
 
         # 5. Add Joints
-        # We pass the KNOWN parent context (Component or Occurrence)
         self.process_joints(occ, body, parent_context)
 
         # 6. Add Geometry (Visual)
         comp_name = self.clean_name(occ.component.name)
-        ET.SubElement(body, 'geom', {'type': 'mesh', 'mesh': comp_name})
+        rgba_str = self.get_appearance_rgba(occ)
+        ET.SubElement(body, 'geom', {'type': 'mesh', 'mesh': comp_name, 'rgba': rgba_str})
 
         # Process children
         for child_occ in occ.childOccurrences:
-            # For the children, the current 'occ' is the parent context
             self.process_occurrence(child_occ, body, current_world_transform, occ)
+
+    def get_appearance_rgba(self, occ):
+        # Default Gray
+        default_rgba = "0.7 0.7 0.7 1.0"
+        try:
+            # Check occurrence first, then component
+            app = occ.appearance
+            if not app:
+                app = occ.component.appearance
+            
+            if not app:
+                return default_rgba
+                
+            # Look for color property
+            # Fusion appearances have different property names based on the material type
+            # 'color_base' is common for modern 'Advanced' materials
+            prop = app.appearanceProperties.itemById('color_base')
+            if not prop:
+                # Fallback for older materials
+                prop = app.appearanceProperties.itemById('opaque_albedo')
+            
+            if prop:
+                color_prop = adsk.core.ColorProperty.cast(prop)
+                if color_prop and color_prop.value:
+                    color = color_prop.value
+                    return f"{color.red/255.0} {color.green/255.0} {color.blue/255.0} {color.opacity/255.0}"
+            
+            return default_rgba
+        except:
+            return default_rgba
 
     def process_inertial(self, comp, body_elem):
         try:
