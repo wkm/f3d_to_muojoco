@@ -275,12 +275,10 @@ class Exporter:
                 clean_body_name = self.clean_name(body.name)
                 mesh_name = f"{clean_comp_name}_{clean_body_name}"
                 
-                # Fusion exports STLs in cm. MuJoCo expects meters.
-                # We must scale the mesh down by 0.01.
+                # Fusion exports STLs in cm. We use them as-is (unitless/consistent).
                 ET.SubElement(asset, 'mesh', {
                     'name': mesh_name, 
-                    'file': f"{mesh_name}.stl",
-                    'scale': '0.01 0.01 0.01'
+                    'file': f"{mesh_name}.stl"
                 })
 
         # Worldbody and recursively add bodies
@@ -358,7 +356,7 @@ class Exporter:
         
         # 3. Extract Pos/Quat from Relative Transform
         trans = rel_transform.translation
-        pos_str = f"{trans.x / 100.0} {trans.y / 100.0} {trans.z / 100.0}" # cm to m
+        pos_str = f"{trans.x} {trans.y} {trans.z}" # Keep in internal units (cm)
         quat_str = self.matrix_to_quat(rel_transform)
         
         body = ET.SubElement(parent_xml_elem, 'body', {'name': clean_name, 'pos': pos_str, 'quat': quat_str})
@@ -449,21 +447,16 @@ class Exporter:
             # Center of Mass
             # props.centerOfMass is relative to the Component's Coordinate System (Local)
             com = props.centerOfMass
-            com_str = f"{com.x / 100.0} {com.y / 100.0} {com.z / 100.0}"
+            com_str = f"{com.x} {com.y} {com.z}"
             
             # Moments of Inertia
             # getMomentsOfInertia returns (xx, yy, zz, xy, yz, xz) in kg/cm^2 ? 
             # Fusion units are internal (cm, kg).
-            # We need to be careful about units. Fusion default is cm, kg.
-            # Inertia is mass * dist^2. 
-            # If mass is kg and dist is cm, then inertia is kg*cm^2.
-            # MJCF expects kg*m^2.
-            # Conversion factor: 1 cm^2 = 0.0001 m^2.
+            # We keep everything consistent (cm, kg).
             
             (Ixx, Iyy, Izz, Ixy, Iyz, Ixz) = props.getMomentsOfInertia()
             
-            scale = 0.0001
-            full_inertia = f"{Ixx*scale} {Iyy*scale} {Izz*scale} {Ixy*scale} {Ixz*scale} {Iyz*scale}"
+            full_inertia = f"{Ixx} {Iyy} {Izz} {Ixy} {Ixz} {Iyz}"
             
             ET.SubElement(body_elem, 'inertial', {
                 'pos': com_str,
@@ -560,7 +553,7 @@ class Exporter:
         origin.transformBy(grandparent_to_world)
         origin.transformBy(world_to_child)
         
-        pos_str = f"{origin.x / 100.0} {origin.y / 100.0} {origin.z / 100.0}"
+        pos_str = f"{origin.x} {origin.y} {origin.z}"
         
         # 4. Transform Axis: Same Logic
         axis_vec = parent_geom.primaryAxisVector.copy()
@@ -573,13 +566,13 @@ class Exporter:
             bb = child_occ.boundingBox
             self.log(f"  DEBUG Joint '{joint.name}':")
             self.log(f"    Target Body: {child_occ.name}")
-            self.log(f"    World BB Center: {bb.minPoint.x/100:.3f},{bb.minPoint.y/100:.3f},{bb.minPoint.z/100:.3f} to {bb.maxPoint.x/100:.3f},{bb.maxPoint.y/100:.3f},{bb.maxPoint.z/100:.3f}")
+            self.log(f"    World BB Center: {bb.minPoint.x:.3f},{bb.minPoint.y:.3f},{bb.minPoint.z:.3f} to {bb.maxPoint.x:.3f},{bb.maxPoint.y:.3f},{bb.maxPoint.z:.3f}")
             self.log(f"    Calc Local Pos: {pos_str}")
             
             # Transform Local Pos back to World for comparison?
             check_pt = origin.copy()
             check_pt.transformBy(child_occ.transform) # Local -> World
-            self.log(f"    Calc World Pos: {check_pt.x/100:.3f} {check_pt.y/100:.3f} {check_pt.z/100:.3f}")
+            self.log(f"    Calc World Pos: {check_pt.x:.3f} {check_pt.y:.3f} {check_pt.z:.3f}")
         except:
             pass
             
@@ -596,7 +589,7 @@ class Exporter:
             limits = slide_motion.slideLimits
             if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
                 # Slide limits are in cm, convert to m
-                extra_attrs['range'] = f"{limits.minimumValue/100.0} {limits.maximumValue/100.0}"
+                extra_attrs['range'] = f"{limits.minimumValue} {limits.maximumValue}"
         
         ET.SubElement(body_elem, 'joint', {
             'name': self.clean_name(joint.name),
@@ -610,7 +603,7 @@ class Exporter:
         ET.SubElement(body_elem, 'geom', {
             'name': f"debug_joint_{self.clean_name(joint.name)}",
             'type': 'sphere',
-            'size': '0.05',
+            'size': '5.0',
             'rgba': '1 0 0 1',
             'pos': pos_str
         })
