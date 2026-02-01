@@ -270,50 +270,57 @@ class Exporter:
         # Emergency Orange (Fallback)
         default_rgba = "1.0 0.5 0.0 1.0"
         
-        try:
-            # 1. Check Occurrence Override
-            app = occ.appearance
-            
-            # 2. Check Component Default
-            if not app:
-                app = occ.component.appearance
-            
-            # 3. Check Physical Material Appearance
-            if not app and occ.component.material:
-                app = occ.component.material.appearance
+        # 1. Check Occurrence Override
+        app = occ.appearance
+        if app: self.log(f"Found appearance on Occurrence: {app.name}")
+        
+        # 2. Check Component Default
+        if not app:
+            app = occ.component.appearance
+            if app: self.log(f"Found appearance on Component: {app.name}")
+        
+        # 3. Check Physical Material Appearance
+        if not app and occ.component.material:
+            app = occ.component.material.appearance
+            if app: self.log(f"Found appearance on Material: {app.name}")
 
-            # 4. Check first body in component
-            if not app and occ.component.bRepBodies.count > 0:
-                app = occ.component.bRepBodies.item(0).appearance
+        # 4. Check first body in component
+        if not app and occ.component.bRepBodies.count > 0:
+            app = occ.component.bRepBodies.item(0).appearance
+            if app: self.log(f"Found appearance on Body: {app.name}")
 
-            if not app:
-                if not self._debug_logged:
-                    self.log(f"--- DEBUG: No appearance found for component {occ.component.name} ---")
-                    # Note: We don't set self._debug_logged to True yet, 
-                    # we want to see the first occurrence that DOES have an app.
-                return default_rgba
+        if not app:
+            self.log(f"No appearance found for {occ.name}")
+            return default_rgba
 
-            # DEBUG LOGGING (Once)
-            if not self._debug_logged:
-                self.log(f"--- DEBUG APPEARANCE: {app.name} ---")
-                for p in app.appearanceProperties:
+        # DEBUG LOGGING (Once per session)
+        if not self._debug_logged:
+            self.log(f"--- ANALYZING PROPERTIES FOR: {app.name} ---")
+            try:
+                props = app.appearanceProperties
+                self.log(f"Property Count: {props.count}")
+                for p in props:
                     try:
-                         val_str = "N/A"
-                         if p.constructor.name == 'adsk::core::ColorProperty':
-                             c = adsk.core.ColorProperty.cast(p).value
-                             val_str = f"R:{c.red} G:{c.green} B:{c.blue}"
-                         self.log(f"Prop: {p.name} | ID: {p.id} | Type: {p.constructor.name} | Val: {val_str}")
-                    except:
-                        pass
+                        p_name = p.name if p.name else "Unnamed"
+                        p_id = p.id if p.id else "NoID"
+                        p_type = p.constructor.name
+                        val_str = "N/A"
+                        if p_type == 'adsk::core::ColorProperty':
+                            c = adsk.core.ColorProperty.cast(p).value
+                            val_str = f"R:{c.red} G:{c.green} B:{c.blue}"
+                        self.log(f"  > {p_name} ({p_id}) | Type: {p_type} | Val: {val_str}")
+                    except Exception as e:
+                        self.log(f"  > Error reading property: {str(e)}")
                 self._debug_logged = True
+            except Exception as e:
+                self.log(f"CRITICAL ERROR in property loop: {str(e)}")
 
-            color_val = self.find_color_in_appearance(app)
-            if color_val:
-                return f"{color_val.red/255.0} {color_val.green/255.0} {color_val.blue/255.0} {color_val.opacity/255.0}"
-            
-            return default_rgba
-        except:
-            return default_rgba
+        color_val = self.find_color_in_appearance(app)
+        if color_val:
+            return f"{color_val.red/255.0} {color_val.green/255.0} {color_val.blue/255.0} {color_val.opacity/255.0}"
+        
+        self.log(f"Appearance found but find_color_in_appearance failed for {app.name}")
+        return default_rgba
 
     def find_color_in_appearance(self, app):
         # Priority list of property names
