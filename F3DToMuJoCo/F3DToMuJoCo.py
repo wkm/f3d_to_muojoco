@@ -179,10 +179,23 @@ class Exporter:
         # Initialize recursion with Identity matrix (World Frame)
         identity_transform = adsk.core.Matrix3D.create()
         
-        # Recursively process occurrences
+        # ROOT WRAPPER FOR COORDINATE CORRECTION
+        # Fusion 360 often defaults to Y-Up. MuJoCo is Z-Up.
+        # We wrap the entire robot in a body that rotates +90 degrees around X
+        # to align Fusion's Y-axis with MuJoCo's Z-axis.
+        # Note: If the user is in Z-Up mode, this might be redundant/wrong, 
+        # but since there's no reliable API check for the *document's* up-axis (only prefs),
+        # we'll assume the standard Y-Up or let the user manually edit this single value.
+        
+        # Creating a "root_adapter" body
+        # Euler order in MuJoCo default is "xyz". 
+        # Rotate 90 deg (1.57 rad) around X.
+        root_adapter = ET.SubElement(worldbody, 'body', {'name': 'root_adapter', 'pos': '0 0 0', 'euler': '90 0 0'})
+        
+        # Recursively process occurrences, attaching them to the ADAPTER
         for occ in self.root_comp.occurrences:
             # The parent of these top-level occurrences is the Root Component
-            self.process_occurrence(occ, worldbody, identity_transform, self.root_comp)
+            self.process_occurrence(occ, root_adapter, identity_transform, self.root_comp)
 
         # Write to file
         xml_path = os.path.join(self.export_path, f"{self.clean_name(self.root_comp.name)}.xml")
