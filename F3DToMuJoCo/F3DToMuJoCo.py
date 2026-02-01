@@ -551,14 +551,16 @@ class Exporter:
         extra_attrs = {}
         if mj_type == "hinge":
             rev_motion = adsk.fusion.RevoluteJointMotion.cast(motion)
-            if rev_motion.rotationLimits.isLimited:
+            limits = rev_motion.rotationLimits
+            if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
                 # Fusion is radians? Yes, internal units for angles are radians.
-                extra_attrs['range'] = f"{rev_motion.rotationLimits.minimumValue} {rev_motion.rotationLimits.maximumValue}"
+                extra_attrs['range'] = f"{limits.minimumValue} {limits.maximumValue}"
         elif mj_type == "slide":
             slide_motion = adsk.fusion.SliderJointMotion.cast(motion)
-            if slide_motion.slideLimits.isLimited:
+            limits = slide_motion.slideLimits
+            if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
                 # Slide limits are in cm, convert to m
-                extra_attrs['range'] = f"{slide_motion.slideLimits.minimumValue/100.0} {slide_motion.slideLimits.maximumValue/100.0}"
+                extra_attrs['range'] = f"{limits.minimumValue/100.0} {limits.maximumValue/100.0}"
         
         ET.SubElement(body_elem, 'joint', {
             'name': self.clean_name(joint.name),
