@@ -181,12 +181,13 @@ class Exporter:
         
         # ROOT WRAPPER FOR COORDINATE CORRECTION
         # Fusion 360 often defaults to Y-Up. MuJoCo is Z-Up.
-        # However, STL export often respects the internal Z-Up data or the user has verified STLs are Up.
-        # Also, <compiler angle="radian"> makes "90" interpreted as 90 radians.
-        # We set this to 0 0 0. If a user needs to rotate the entire model, they can edit this "root_adapter".
-        
-        # Creating a "root_adapter" body
-        root_adapter = ET.SubElement(worldbody, 'body', {'name': 'root_adapter', 'pos': '0 0 0', 'euler': '0 0 0'})
+        # Since <compiler angle="radian"> is set, we use math.pi/2 (90 degrees).
+        root_rot = math.pi / 2
+        root_adapter = ET.SubElement(worldbody, 'body', {
+            'name': 'root_adapter', 
+            'pos': '0 0 0', 
+            'euler': f"{root_rot} 0 0"
+        })
         
         # Recursively process occurrences, attaching them to the ADAPTER
         for occ in self.root_comp.occurrences:
