@@ -137,28 +137,38 @@ class Exporter:
         for comp in self.design.allComponents:
             if progress.wasCancelled: return
             
-            current_step += 1
-            progress.progressValue = current_step
-            progress.message = f"Exporting mesh: {comp.name}"
-            
-            # Skip the root component for mesh export as it's an assembly container
-            if comp == self.design.rootComponent:
+            # Skip the root component mesh export (it usually just holds sub-components)
+            # If root has bodies, we might want to export them? Let's allow it if it has bodies.
+            # But usually root is just a container. Let's stick to skipping for now unless needed.
+            if comp == self.design.rootComponent and comp.bRepBodies.count == 0:
                 continue
             
-            # Clean name for filename
-            clean_name = self.clean_name(comp.name)
-            stl_name = f"{clean_name}.stl"
-            full_path = os.path.join(self.meshes_path, stl_name)
+            current_step += 1
+            progress.progressValue = current_step
+            progress.message = f"Processing component: {comp.name}"
             
-            self.log(f"Saving mesh: {stl_name}")
+            clean_comp_name = self.clean_name(comp.name)
             
-            # Create STL export options
-            stl_options = self.export_mgr.createSTLExportOptions(comp, full_path)
-            stl_options.sendToPrintUtility = False
-            stl_options.isBinaryFormat = True
-            stl_options.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementMedium
-            
-            self.export_mgr.execute(stl_options)
+            # Export EACH body in the component separately
+            for i in range(comp.bRepBodies.count):
+                body = comp.bRepBodies.item(i)
+                clean_body_name = self.clean_name(body.name)
+                
+                # Unique filename: CompName_BodyName.stl
+                # Note: If body names are not unique within a component, Fusion handles it, 
+                # but cleaning might collide. Fusion default is "Body1", "Body2".
+                stl_name = f"{clean_comp_name}_{clean_body_name}.stl"
+                full_path = os.path.join(self.meshes_path, stl_name)
+                
+                self.log(f"Saving mesh: {stl_name}")
+                
+                # Create STL export options for the BODY
+                stl_options = self.export_mgr.createSTLExportOptions(body, full_path)
+                stl_options.sendToPrintUtility = False
+                stl_options.isBinaryFormat = True
+                stl_options.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementMedium
+                
+                self.export_mgr.execute(stl_options)
 
     def clean_name(self, name):
         return name.replace(':', '_').replace(' ', '_')
@@ -230,10 +240,18 @@ class Exporter:
         # Add assets (meshes)
         asset = ET.SubElement(root_elem, 'asset')
         for comp in self.design.allComponents:
-            if comp == self.root_comp: continue
-            clean_name = self.clean_name(comp.name)
-            ET.SubElement(asset, 'mesh', {'name': clean_name, 'file': f"{clean_name}.stl"})
-            # TODO: Add materials here
+            # Skip root if empty (consistent with save_meshes)
+            if comp == self.root_comp and comp.bRepBodies.count == 0: continue
+            
+            clean_comp_name = self.clean_name(comp.name)
+            
+            # Register a mesh asset for EACH body
+            for i in range(comp.bRepBodies.count):
+                body = comp.bRepBodies.item(i)
+                clean_body_name = self.clean_name(body.name)
+                mesh_name = f"{clean_comp_name}_{clean_body_name}"
+                
+                ET.SubElement(asset, 'mesh', {'name': mesh_name, 'file': f"{mesh_name}.stl"})
 
         # Worldbody and recursively add bodies
         worldbody = ET.SubElement(root_elem, 'worldbody')
@@ -322,34 +340,45 @@ class Exporter:
         self.process_joints(occ, body, parent_context)
 
         # 6. Add Geometry (Visual)
-        comp_name = self.clean_name(occ.component.name)
-        rgba_str = self.get_appearance_rgba(occ)
-        ET.SubElement(body, 'geom', {'type': 'mesh', 'mesh': comp_name, 'rgba': rgba_str})
+        # Add a geom for EACH body in the component
+        clean_comp_name = self.clean_name(occ.component.name)
+        for i in range(occ.component.bRepBodies.count):
+            brep_body = occ.component.bRepBodies.item(i)
+            clean_body_name = self.clean_name(brep_body.name)
+            mesh_name = f"{clean_comp_name}_{clean_body_name}"
+            
+            # Get specific color for this body
+            rgba_str = self.get_body_appearance_rgba(occ, brep_body)
+            
+            ET.SubElement(body, 'geom', {'type': 'mesh', 'mesh': mesh_name, 'rgba': rgba_str})
 
         # Process children
         for child_occ in occ.childOccurrences:
             self.process_occurrence(child_occ, body, current_world_transform, occ)
 
-    def get_appearance_rgba(self, occ):
+    def get_body_appearance_rgba(self, occ, body):
         # Emergency Orange (Fallback)
         default_rgba = "1.0 0.5 0.0 1.0"
         
-        # 1. Check Occurrence Override
-        app = occ.appearance
-        if app: self.log(f"Found appearance on Occurrence: {app.name}")
+        # 1. Check Body Override (Highest Priority for granular visuals)
+        app = body.appearance
+        if app: self.log(f"Found appearance on Body: {app.name}")
+
+        # 2. Check Occurrence Override
+        if not app:
+            app = occ.appearance
+            if app: self.log(f"Found appearance on Occurrence: {app.name}")
         
-        # 2. Check Physical Material Appearance
+        # 3. Check Physical Material Appearance
         if not app and occ.component.material:
             app = occ.component.material.appearance
             if app: self.log(f"Found appearance on Material: {app.name}")
 
-        # 3. Check first body in component
-        if not app and occ.component.bRepBodies.count > 0:
-            app = occ.component.bRepBodies.item(0).appearance
-            if app: self.log(f"Found appearance on Body: {app.name}")
-
+        # Note: We skipped 'component.appearance' because it doesn't exist.
+        
         if not app:
-            self.log(f"No appearance found for {occ.name}")
+            # self.log(f"No appearance found for {occ.name} / {body.name}") 
+            # Reduced logging to avoid spam
             return default_rgba
 
         color_val = self.find_color_in_appearance(app)
