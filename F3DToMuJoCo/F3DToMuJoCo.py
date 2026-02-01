@@ -572,7 +572,7 @@ class Exporter:
             bb = child_occ.boundingBox
             self.log(f"  DEBUG Joint '{joint.name}':")
             self.log(f"    Target Body: {child_occ.name}")
-            self.log(f"    World BB Center: {bb.minPoint.x/100:.3f},{bb.minPoint.y/100:.3f} to {bb.maxPoint.x/100:.3f},{bb.maxPoint.y/100:.3f}")
+            self.log(f"    World BB Center: {bb.minPoint.x/100:.3f},{bb.minPoint.y/100:.3f},{bb.minPoint.z/100:.3f} to {bb.maxPoint.x/100:.3f},{bb.maxPoint.y/100:.3f},{bb.maxPoint.z/100:.3f}")
             self.log(f"    Calc Local Pos: {pos_str}")
             
             # Transform Local Pos back to World for comparison?
