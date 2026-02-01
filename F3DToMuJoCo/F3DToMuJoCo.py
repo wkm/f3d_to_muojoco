@@ -288,33 +288,33 @@ class Exporter:
             self.log(f"No appearance found for {occ.name}")
             return default_rgba
 
-                    # DEBUG LOGGING (Once per session)
-                if not self._debug_logged:
-                    self.log(f"--- ANALYZING PROPERTIES FOR: {app.name} ---")
+        # DEBUG LOGGING (Once per session)
+        if not self._debug_logged:
+            self.log(f"--- ANALYZING PROPERTIES FOR: {app.name} ---")
+            try:
+                props = app.appearanceProperties
+                self.log(f"Property Count: {props.count}")
+                for p in props:
                     try:
-                        props = app.appearanceProperties
-                        self.log(f"Property Count: {props.count}")
-                        for p in props:
-                            try:
-                                p_name = p.name
-                                p_id = p.id
-                                p_type = p.objectType # Correct Python API property
-                                val_str = "N/A"
-                                
-                                # Check type using string comparison or direct cast attempt
-                                if 'ColorProperty' in p_type:
-                                    c_prop = adsk.core.ColorProperty.cast(p)
-                                    if c_prop:
-                                        c = c_prop.value
-                                        if c:
-                                            val_str = f"R:{c.red} G:{c.green} B:{c.blue}"
-                                
-                                self.log(f"  > Name: '{p_name}' | ID: '{p_id}' | Type: {p_type} | Val: {val_str}")
-                            except Exception as e:
-                                self.log(f"  > Error reading property: {str(e)}")
-                        self._debug_logged = True
+                        p_name = p.name
+                        p_id = p.id
+                        p_type = p.objectType # Correct Python API property
+                        val_str = "N/A"
+                        
+                        # Check type using string comparison or direct cast attempt
+                        if 'ColorProperty' in p_type:
+                            c_prop = adsk.core.ColorProperty.cast(p)
+                            if c_prop:
+                                c = c_prop.value
+                                if c:
+                                    val_str = f"R:{c.red} G:{c.green} B:{c.blue}"
+                        
+                        self.log(f"  > Name: '{p_name}' | ID: '{p_id}' | Type: {p_type} | Val: {val_str}")
                     except Exception as e:
-                        self.log(f"CRITICAL ERROR in property loop: {str(e)}")
+                        self.log(f"  > Error reading property: {str(e)}")
+                self._debug_logged = True
+            except Exception as e:
+                self.log(f"CRITICAL ERROR in property loop: {str(e)}")
         color_val = self.find_color_in_appearance(app)
         if color_val:
             return f"{color_val.red/255.0} {color_val.green/255.0} {color_val.blue/255.0} {color_val.opacity/255.0}"
