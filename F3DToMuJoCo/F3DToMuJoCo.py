@@ -526,28 +526,48 @@ class Exporter:
             return # Rigid, Ball, etc. not handled yet
             
         # Determine if child_occ is occurrenceOne or Two
+        # We need to grab the geometry associated with the CHILD side of the joint
+        # Fusion Docs: "Returns the joint geometry or origin for the first occurrence."
+        # If Child is Occ1, we use Geometry1.
         is_one = (joint.occurrenceOne == child_occ)
+        
+        # However, we need the anchor point.
+        # Usually, for a hinge, the anchor is the same on both bodies (they overlap).
+        # We can grab either, BUT we must know which coordinate space it is in.
+        # Docs: "The point is returned in the coordinate space of the PARENT COMPONENT of the occurrence."
+        
         geom = joint.geometryOrOriginOne if is_one else joint.geometryOrOriginTwo
         
-        # Geometry/Origin is typically in World Space (Root Context)
-        # We need it in the Child Body's Local Frame.
+        # Coordinate Space Logic:
+        # geom.origin is in the Coordinate System of child_occ's PARENT.
+        # We want the position in the Coordinate System of child_occ (Local).
         
-        # 1. Get World -> Child Transform
+        # 1. Get Parent -> World Transform
+        parent_occ = self.get_parent_occurrence(child_occ)
+        if parent_occ:
+            parent_to_world = parent_occ.transform
+        else:
+            parent_to_world = adsk.core.Matrix3D.create() # Identity (Root)
+
+        # 2. Get World -> Child Transform
         # child_occ.transform is Child -> World
         world_to_child = child_occ.transform.copy()
         world_to_child.invert()
         
-        # 2. Transform Origin
+        # 3. Transform Origin: Parent -> World -> Child
         origin = geom.origin.copy()
-        origin.transformBy(world_to_child)
+        origin.transformBy(parent_to_world) # Now in World
+        origin.transformBy(world_to_child)  # Now in Child Local
+        
         pos_str = f"{origin.x / 100.0} {origin.y / 100.0} {origin.z / 100.0}"
         
-        # 3. Transform Axis
+        # 4. Transform Axis: Parent -> World -> Child
         axis_vec = geom.primaryAxisVector.copy()
+        axis_vec.transformBy(parent_to_world)
         axis_vec.transformBy(world_to_child)
         axis_str = f"{axis_vec.x} {axis_vec.y} {axis_vec.z}"
         
-        # 4. Limits
+        # 5. Limits
         extra_attrs = {}
         if mj_type == "hinge":
             rev_motion = adsk.fusion.RevoluteJointMotion.cast(motion)
