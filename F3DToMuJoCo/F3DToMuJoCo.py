@@ -15,8 +15,9 @@ CMD_NAME = 'Export to MuJoCo'
 CMD_Description = 'Export the current design to a MuJoCo MJCF (.xml) file and meshes.'
 
 class Exporter:
-    def __init__(self, export_path):
+    def __init__(self, export_path, debug_mode=False):
         self.export_path = export_path
+        self.debug_mode = debug_mode
         self.meshes_path = os.path.join(export_path, 'meshes')
         if not os.path.exists(self.meshes_path):
             os.makedirs(self.meshes_path)
@@ -618,14 +619,15 @@ class Exporter:
             **extra_attrs
         })
 
-        # DEBUG: Visual Sphere at Joint Location
-        ET.SubElement(body_elem, 'geom', {
-            'name': f"debug_joint_{self.clean_name(joint.name)}",
-            'type': 'sphere',
-            'size': f"{5.0 * s}", # Scale debug sphere too
-            'rgba': '1 0 0 1',
-            'pos': pos_str
-        })
+        if self.debug_mode:
+            # DEBUG: Visual Sphere at Joint Location
+            ET.SubElement(body_elem, 'geom', {
+                'name': f"debug_joint_{self.clean_name(joint.name)}",
+                'type': 'sphere',
+                'size': f"{5.0 * s}", # Scale debug sphere too
+                'rgba': '1 0 0 1',
+                'pos': pos_str
+            })
 
 class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
     def __init__(self):
@@ -642,7 +644,12 @@ class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
             
             if res == adsk.core.DialogResults.DialogOK:
                 export_path = folderDlg.folder
-                exporter = Exporter(export_path)
+                
+                # Read Debug Mode Input
+                debug_input = inputs.itemById('debug_mode')
+                debug_mode = debug_input.value if debug_input else False
+                
+                exporter = Exporter(export_path, debug_mode)
                 exporter.export_all()
             else:
                 _ui.messageBox('Export cancelled.')
@@ -680,9 +687,12 @@ class ExportCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             cmd.destroy.add(onDestroy)
             _handlers.append(onDestroy)
             
-            # Add a brief description in the dialog if needed
+            # Define Inputs
             inputs = cmd.commandInputs
             inputs.addTextBoxCommandInput('info', '', 'Click OK to select the export folder and begin the process.', 2, True)
+            
+            # Add Debug Mode Checkbox
+            inputs.addBoolValueInput('debug_mode', 'Debug Mode (Visual Spheres)', True, '', False)
 
         except:
             if _ui:
