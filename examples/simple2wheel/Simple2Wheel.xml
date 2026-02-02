@@ -18,12 +18,14 @@
     <light directional="true" diffuse=".8 .8 .8" pos="0 0 10" dir="0 0 -1" />
     <geom name="floor" type="plane" size="5 5 0.1" rgba=".9 .9 .9 1" />
     <body name="root_adapter" pos="0 0 0" euler="1.5707963267948966 0 0">
-      <body name="body_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+      <body name="body_1" pos="0.000000 0.000000 0.000000" quat="1.000000 0.000000 0.000000 0.000000">
         <geom type="mesh" mesh="body_body" rgba="0.9647058823529412 0.9647058823529412 0.9529411764705882 1.0" />
-        <body name="l_wheel_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+        <body name="l_wheel_1" pos="0.000000 0.000000 0.000000" quat="1.000000 0.000000 0.000000 0.000000">
+          <joint name="Revolute_1" type="hinge" pos="75.000000 75.000000 0.000000" axis="-1.000000 0.000000 0.000000" />
           <geom type="mesh" mesh="l_wheel_l_wheel" rgba="0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0" />
         </body>
-        <body name="r_wheel_1" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+        <body name="r_wheel_1" pos="0.000000 0.000000 0.000000" quat="1.000000 0.000000 0.000000 0.000000">
+          <joint name="Revolute_2" type="hinge" pos="-175.000000 75.000000 0.000000" axis="1.000000 0.000000 0.000000" />
           <geom type="mesh" mesh="r_wheel_r_wheel" rgba="0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0" />
         </body>
       </body>
