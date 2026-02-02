@@ -587,11 +587,91 @@ class Exporter:
                 "inertial",
                 {"pos": com_str, "mass": str(mass), "fullinertia": full_inertia},
             )
-        except Exception as e:
-            # Fallback if physical properties fail (e.g. empty component)
-            if self.debug_mode:
-                self.log(
-                    f"Warning: Could not extract inertial properties for {comp.name}: {type(e).__name__}"
+        except Exception:
+            # Fallback: Estimate inertial properties from bounding box
+            # This is critical - without inertia, MuJoCo dynamics don't work!
+            self.log(
+                f"No physical material on {comp.name}, using estimated inertial properties"
+            )
+
+            # Try to get bounding box for estimation
+            try:
+                if comp.bRepBodies.count > 0:
+                    # Get first body's bounding box
+                    bb = comp.bRepBodies.item(0).boundingBox
+                    s = self.length_scale
+
+                    # Estimate center of mass from bounding box center
+                    cx = (bb.minPoint.x + bb.maxPoint.x) / 2.0 * s
+                    cy = (bb.minPoint.y + bb.maxPoint.y) / 2.0 * s
+                    cz = (bb.minPoint.z + bb.maxPoint.z) / 2.0 * s
+                    com_str = self.format_vec3(cx, cy, cz)
+
+                    # Estimate mass from volume (assume density ~1000 kg/m³ for plastic/wood)
+                    # Volume in cm³, convert to m³, multiply by density
+                    dx = abs(bb.maxPoint.x - bb.minPoint.x)
+                    dy = abs(bb.maxPoint.y - bb.minPoint.y)
+                    dz = abs(bb.maxPoint.z - bb.minPoint.z)
+                    volume_cm3 = dx * dy * dz  # cm³
+                    volume_m3 = volume_cm3 / 1e6  # m³
+                    mass = max(0.01, volume_m3 * 1000)  # kg, minimum 10g
+
+                    # Estimate inertia using box approximation: I = (1/12) * m * (d1² + d2²)
+                    # Scale dimensions to document units
+                    s2 = s * s
+                    dx_scaled = dx * s
+                    dy_scaled = dy * s
+                    dz_scaled = dz * s
+
+                    Ixx = (mass / 12.0) * (dy_scaled**2 + dz_scaled**2)
+                    Iyy = (mass / 12.0) * (dx_scaled**2 + dz_scaled**2)
+                    Izz = (mass / 12.0) * (dx_scaled**2 + dy_scaled**2)
+
+                    # Use diagonal inertia (no cross terms)
+                    full_inertia = self.format_inertia(Ixx, Iyy, Izz, 0, 0, 0)
+
+                    ET.SubElement(
+                        body_elem,
+                        "inertial",
+                        {
+                            "pos": com_str,
+                            "mass": str(mass),
+                            "fullinertia": full_inertia,
+                        },
+                    )
+
+                    if self.debug_mode:
+                        self.log(
+                            f"  Estimated: mass={mass:.4f}kg, volume={volume_m3 * 1e6:.1f}cm³"
+                        )
+                else:
+                    # No bodies - use minimal inertia
+                    self.log(
+                        f"  Warning: {comp.name} has no bodies, using minimal inertia"
+                    )
+                    ET.SubElement(
+                        body_elem,
+                        "inertial",
+                        {
+                            "pos": "0 0 0",
+                            "mass": "0.01",
+                            "diaginertia": "0.001 0.001 0.001",
+                        },
+                    )
+            except Exception as fallback_error:
+                # Last resort: minimal inertia
+                if self.debug_mode:
+                    self.log(
+                        f"  Fallback estimation failed: {type(fallback_error).__name__}"
+                    )
+                ET.SubElement(
+                    body_elem,
+                    "inertial",
+                    {
+                        "pos": "0 0 0",
+                        "mass": "0.01",
+                        "diaginertia": "0.001 0.001 0.001",
+                    },
                 )
 
     def get_token(self, obj):
