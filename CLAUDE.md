@@ -45,18 +45,21 @@ The entire exporter is contained in `F3DToMuJoCo/F3DToMuJoCo.py` (~730 lines). T
 ### Critical Transform Logic
 
 **Coordinate Systems:**
+
 - **Fusion API** returns values in **centimeters (cm)** internally
 - **Document Units** (e.g., mm, inches) are used for STL export
 - **`self.length_scale`** converts API values (cm) to document units to match STL coordinates
 - **Fusion is Y-Up, MuJoCo is Z-Up**: A `root_adapter` body with 90° rotation is added to the MJCF worldbody
 
 **Transform Chain:**
+
 - `process_occurrence()` uses **World-to-Local** transforms (F3DToMuJoCo.py:360-406)
 - `parent_world_transform` tracks each parent's world transform
 - Relative transform: `parent_inv * current_world_transform`
 - Both position and quaternion are extracted from the relative transform
 
 **Joint Transforms:**
+
 - Joints are collected from `root_comp.allJoints` (proxies in World context)
 - Joint origin and axis are transformed from World → Child Local frame (F3DToMuJoCo.py:549-573)
 - Uses `child_world_inv` to convert joint geometry to the child body's local coordinates
@@ -64,6 +67,7 @@ The entire exporter is contained in `F3DToMuJoCo/F3DToMuJoCo.py` (~730 lines). T
 ### Joint Matching Strategy
 
 The exporter matches joints to occurrences using **entity tokens** (`entityToken` property):
+
 - `_collect_all_joints()` (F3DToMuJoCo.py:39) collects all joints from the root context
 - `process_joints()` (F3DToMuJoCo.py:499) searches for a joint connecting the current occurrence to its parent
 - Token-based matching handles `None` references to the root component
@@ -71,6 +75,7 @@ The exporter matches joints to occurrences using **entity tokens** (`entityToken
 ### Color Extraction
 
 Priority order for appearance colors (F3DToMuJoCo.py:408-461):
+
 1. Body appearance override (highest priority)
 2. Occurrence appearance override
 3. Component physical material appearance
@@ -88,19 +93,25 @@ Property names searched: `color_base`, `Color`, `opaque_albedo`, `metal_f0`
 ## Common Pitfalls
 
 ### Duplicate Component Names
+
 Will cause mesh files to overwrite each other. The exporter validates this before export.
 
 ### Flat Hierarchies (Sibling Joints)
+
 Joints between components at the same hierarchy level may not export correctly. The exporter expects a nested parent-child structure matching the kinematic chain. Validation warns about this.
 
 ### Unit Scaling Issues
+
 The recent commit history shows extensive work on unit scaling:
+
 - Always use `self.length_scale` when converting positions/dimensions from API values
 - Inertia requires `self.length_scale²` scaling
 - Joint limits: revolute (already in radians), slider (needs length scaling)
 
 ### Transform Bugs
+
 When joints appear "exploded" or misplaced:
+
 - Verify the World-to-Local transform chain is correct
 - Check that `parent_world_transform` is properly threaded through recursion
 - Use Debug Mode to visualize joint locations with red spheres
@@ -108,19 +119,23 @@ When joints appear "exploded" or misplaced:
 ## Modeling Guidelines for Users
 
 ### Naming
+
 - Use unique `snake_case` component names
 - Avoid spaces and special characters
 - Root component name becomes the MJCF model name
 
 ### Joints
+
 - Define all motion using Fusion 360 Joints (Revolute, Slider)
 - Joints should connect child to parent, not siblings
 - Supported types: Revolute (→ hinge), Slider (→ slide)
 
 ### Physics
+
 - Assign physical materials (e.g., Aluminum, ABS) for correct mass/inertia
 - Empty components without bodies are skipped
 
 ### Visuals
+
 - Colors extracted from appearances or materials
 - Each BRep body becomes a separate mesh and geom element

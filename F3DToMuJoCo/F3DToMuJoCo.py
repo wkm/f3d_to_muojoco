@@ -19,9 +19,21 @@ CMD_Description = "Export the current design to a MuJoCo MJCF (.xml) file and me
 
 
 class Exporter:
-    def __init__(self, export_path, debug_mode=False):
+    def __init__(
+        self,
+        export_path,
+        debug_mode=False,
+        enable_actuators=True,
+        actuator_type="position",
+        enable_sensors=True,
+    ):
         self.export_path = export_path
         self.debug_mode = debug_mode
+        self.enable_actuators = enable_actuators
+        self.actuator_type = actuator_type  # 'position', 'velocity', 'motor'
+        self.enable_sensors = enable_sensors
+        self.exported_joints = []  # Track joints for actuator/sensor generation
+
         self.meshes_path = os.path.join(export_path, "meshes")
         if not os.path.exists(self.meshes_path):
             os.makedirs(self.meshes_path)
@@ -312,6 +324,10 @@ class Exporter:
         # Add basic compiler and asset settings
         ET.SubElement(root_elem, "compiler", {"angle": "radian", "meshdir": "meshes"})
 
+        # Add default section (if actuators enabled)
+        if self.enable_actuators:
+            self._add_default_section(root_elem)
+
         # Add visual settings for better lighting
         visual = ET.SubElement(root_elem, "visual")
         ET.SubElement(
@@ -421,6 +437,12 @@ class Exporter:
             self.process_occurrence(
                 occ, root_adapter, identity_transform, self.root_comp
             )
+
+        # Add actuators and sensors (after worldbody is complete)
+        if self.enable_actuators:
+            self._add_actuators(root_elem)
+        if self.enable_sensors:
+            self._add_sensors(root_elem)
 
         # Write to file
         xml_path = os.path.join(
@@ -709,16 +731,27 @@ class Exporter:
                     limits.minimumValue * s, limits.maximumValue * s
                 )
 
+        joint_name = self.clean_name(joint.name)
         ET.SubElement(
             body_elem,
             "joint",
             {
-                "name": self.clean_name(joint.name),
+                "name": joint_name,
                 "type": mj_type,
                 "pos": pos_str,
                 "axis": axis_str,
                 **extra_attrs,
             },
+        )
+
+        # Track exported joint for actuator/sensor generation
+        self.exported_joints.append(
+            {
+                "name": joint_name,
+                "mj_type": mj_type,  # 'hinge' or 'slide'
+                "has_limits": len(extra_attrs) > 0,
+                "limits": extra_attrs.get("range", None),
+            }
         )
 
         if self.debug_mode:
@@ -734,6 +767,98 @@ class Exporter:
                     "pos": pos_str,
                 },
             )
+
+    def _add_default_section(self, root_elem):
+        """Add MuJoCo default section with actuator parameters."""
+        # Find insertion point (after compiler, before visual)
+        compiler_idx = 0
+        for i, child in enumerate(root_elem):
+            if child.tag == "compiler":
+                compiler_idx = i
+                break
+
+        default_elem = ET.Element("default")
+
+        # Set defaults based on actuator type
+        if self.actuator_type == "position":
+            # PD control defaults
+            ET.SubElement(default_elem, "position", {"kp": "100", "ctrlrange": "-1 1"})
+        elif self.actuator_type == "velocity":
+            # Velocity control defaults
+            ET.SubElement(default_elem, "velocity", {"kv": "10", "ctrlrange": "-1 1"})
+        elif self.actuator_type == "motor":
+            # Motor (torque/force) control defaults
+            ET.SubElement(default_elem, "motor", {"ctrlrange": "-1 1", "gear": "1"})
+
+        # Insert after compiler
+        root_elem.insert(compiler_idx + 1, default_elem)
+
+    def _add_actuators(self, root_elem):
+        """Add actuator section with controls for all joints."""
+        if not self.enable_actuators or not self.exported_joints:
+            return
+
+        actuator_elem = ET.SubElement(root_elem, "actuator")
+
+        for joint_info in self.exported_joints:
+            joint_name = joint_info["name"]
+            has_limits = joint_info["has_limits"]
+            limits = joint_info["limits"]
+
+            # Generate actuator name
+            actuator_suffix = {
+                "position": "_pos",
+                "velocity": "_vel",
+                "motor": "_motor",
+            }.get(self.actuator_type, "_act")
+
+            actuator_name = f"{joint_name}{actuator_suffix}"
+
+            # Base attributes
+            attrs = {"name": actuator_name, "joint": joint_name}
+
+            # Set control range
+            if has_limits and limits:
+                # Use joint limits for control range
+                attrs["ctrlrange"] = limits
+            else:
+                # Use default range
+                attrs["ctrlrange"] = "-1 1"
+
+            # Add appropriate actuator type
+            ET.SubElement(actuator_elem, self.actuator_type, attrs)
+
+        self.log(
+            f"Generated {len(self.exported_joints)} {self.actuator_type} actuator(s)"
+        )
+
+    def _add_sensors(self, root_elem):
+        """Add sensor section with position and velocity sensors for all joints."""
+        if not self.enable_sensors or not self.exported_joints:
+            return
+
+        sensor_elem = ET.SubElement(root_elem, "sensor")
+
+        for joint_info in self.exported_joints:
+            joint_name = joint_info["name"]
+
+            # Add position sensor
+            ET.SubElement(
+                sensor_elem,
+                "jointpos",
+                {"name": f"{joint_name}_pos_sensor", "joint": joint_name},
+            )
+
+            # Add velocity sensor
+            ET.SubElement(
+                sensor_elem,
+                "jointvel",
+                {"name": f"{joint_name}_vel_sensor", "joint": joint_name},
+            )
+
+        self.log(
+            f"Generated {len(self.exported_joints) * 2} sensor(s) ({len(self.exported_joints)} position + {len(self.exported_joints)} velocity)"
+        )
 
 
 class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
@@ -757,7 +882,30 @@ class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
                 debug_input = inputs.itemById("debug_mode")
                 debug_mode = debug_input.value if debug_input else False
 
-                exporter = Exporter(export_path, debug_mode)
+                # Read actuator options
+                enable_actuators_input = inputs.itemById("enable_actuators")
+                enable_actuators = (
+                    enable_actuators_input.value if enable_actuators_input else True
+                )
+
+                actuator_type_input = inputs.itemById("actuator_type")
+                actuator_type = "position"  # default
+                if actuator_type_input:
+                    idx = actuator_type_input.selectedItem.index
+                    actuator_type = ["position", "velocity", "motor"][idx]
+
+                enable_sensors_input = inputs.itemById("enable_sensors")
+                enable_sensors = (
+                    enable_sensors_input.value if enable_sensors_input else True
+                )
+
+                exporter = Exporter(
+                    export_path,
+                    debug_mode,
+                    enable_actuators,
+                    actuator_type,
+                    enable_sensors,
+                )
                 exporter.export_all()
             else:
                 _ui.messageBox("Export cancelled.")
@@ -812,6 +960,31 @@ class ExportCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             # Add Debug Mode Checkbox
             inputs.addBoolValueInput(
                 "debug_mode", "Debug Mode (Visual Spheres)", True, "", False
+            )
+
+            # Add Control Options Header
+            inputs.addTextBoxCommandInput(
+                "actuator_header", "", "<b>Control Options</b>", 1, True
+            )
+
+            # Actuators checkbox
+            inputs.addBoolValueInput(
+                "enable_actuators", "Generate Actuators", True, "", True
+            )
+
+            # Actuator type dropdown
+            actuator_dropdown = inputs.addDropDownCommandInput(
+                "actuator_type",
+                "Actuator Type",
+                adsk.core.DropDownStyles.LabeledIconDropDownStyle,
+            )
+            actuator_dropdown.listItems.add("Position (PD Control)", True, "")
+            actuator_dropdown.listItems.add("Velocity", False, "")
+            actuator_dropdown.listItems.add("Motor (Torque/Force)", False, "")
+
+            # Sensors checkbox
+            inputs.addBoolValueInput(
+                "enable_sensors", "Generate Sensors", True, "", True
             )
 
         except Exception:
