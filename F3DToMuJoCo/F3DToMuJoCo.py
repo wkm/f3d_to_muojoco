@@ -26,12 +26,20 @@ class Exporter:
         self.export_mgr = self.design.exportManager
         self.root_comp = self.design.rootComponent
         
+        # Calculate Unit Scale Factor
+        # Fusion API always returns Centimeters.
+        # STLs are exported in Document Units (e.g., mm, in, m).
+        # We must scale API values to match the Document Units.
+        units_mgr = self.design.unitsManager
+        self.length_scale = units_mgr.convert(1, units_mgr.internalUnits, units_mgr.defaultLengthUnits)
+        
         self._collect_all_joints()
 
     def _collect_all_joints(self):
         # Flatten all joints in the design into one list
         self.all_joints = []
         try:
+            self.log(f"--- DETECTED UNIT SCALE: {self.length_scale} (1 cm = {self.length_scale} doc units) ---")
             self.log("--- SCANNING ALL JOINTS ---")
             for comp in self.design.allComponents:
                 for joint in comp.allJoints:
@@ -356,7 +364,9 @@ class Exporter:
         
         # 3. Extract Pos/Quat from Relative Transform
         trans = rel_transform.translation
-        pos_str = f"{trans.x} {trans.y} {trans.z}" # Keep in internal units (cm)
+        # Scale to match Document Units (e.g., cm -> mm)
+        s = self.length_scale
+        pos_str = f"{trans.x * s} {trans.y * s} {trans.z * s}" 
         quat_str = self.matrix_to_quat(rel_transform)
         
         body = ET.SubElement(parent_xml_elem, 'body', {'name': clean_name, 'pos': pos_str, 'quat': quat_str})
@@ -447,16 +457,17 @@ class Exporter:
             # Center of Mass
             # props.centerOfMass is relative to the Component's Coordinate System (Local)
             com = props.centerOfMass
-            com_str = f"{com.x} {com.y} {com.z}"
+            s = self.length_scale
+            com_str = f"{com.x * s} {com.y * s} {com.z * s}"
             
             # Moments of Inertia
-            # getMomentsOfInertia returns (xx, yy, zz, xy, yz, xz) in kg/cm^2 ? 
             # Fusion units are internal (cm, kg).
-            # We keep everything consistent (cm, kg).
+            # Inertia scales with length squared.
+            s2 = s * s
             
             (Ixx, Iyy, Izz, Ixy, Iyz, Ixz) = props.getMomentsOfInertia()
             
-            full_inertia = f"{Ixx} {Iyy} {Izz} {Ixy} {Ixz} {Iyz}"
+            full_inertia = f"{Ixx*s2} {Iyy*s2} {Izz*s2} {Ixy*s2} {Ixz*s2} {Iyz*s2}"
             
             ET.SubElement(body_elem, 'inertial', {
                 'pos': com_str,
@@ -553,7 +564,8 @@ class Exporter:
         origin.transformBy(grandparent_to_world)
         origin.transformBy(world_to_child)
         
-        pos_str = f"{origin.x} {origin.y} {origin.z}"
+        s = self.length_scale
+        pos_str = f"{origin.x * s} {origin.y * s} {origin.z * s}"
         
         # 4. Transform Axis: Same Logic
         axis_vec = parent_geom.primaryAxisVector.copy()
@@ -566,13 +578,14 @@ class Exporter:
             bb = child_occ.boundingBox
             self.log(f"  DEBUG Joint '{joint.name}':")
             self.log(f"    Target Body: {child_occ.name}")
-            self.log(f"    World BB Center: {bb.minPoint.x:.3f},{bb.minPoint.y:.3f},{bb.minPoint.z:.3f} to {bb.maxPoint.x:.3f},{bb.maxPoint.y:.3f},{bb.maxPoint.z:.3f}")
+            # Scale BB for comparison logging
+            self.log(f"    World BB Center: {bb.minPoint.x*s:.3f},{bb.minPoint.y*s:.3f},{bb.minPoint.z*s:.3f} to {bb.maxPoint.x*s:.3f},{bb.maxPoint.y*s:.3f},{bb.maxPoint.z*s:.3f}")
             self.log(f"    Calc Local Pos: {pos_str}")
             
             # Transform Local Pos back to World for comparison?
             check_pt = origin.copy()
             check_pt.transformBy(child_occ.transform) # Local -> World
-            self.log(f"    Calc World Pos: {check_pt.x:.3f} {check_pt.y:.3f} {check_pt.z:.3f}")
+            self.log(f"    Calc World Pos: {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
         except:
             pass
             
@@ -588,8 +601,8 @@ class Exporter:
             slide_motion = adsk.fusion.SliderJointMotion.cast(motion)
             limits = slide_motion.slideLimits
             if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
-                # Slide limits are in cm, convert to m
-                extra_attrs['range'] = f"{limits.minimumValue} {limits.maximumValue}"
+                # Slide limits are in cm, scale to document units
+                extra_attrs['range'] = f"{limits.minimumValue * s} {limits.maximumValue * s}"
         
         ET.SubElement(body_elem, 'joint', {
             'name': self.clean_name(joint.name),
@@ -603,7 +616,7 @@ class Exporter:
         ET.SubElement(body_elem, 'geom', {
             'name': f"debug_joint_{self.clean_name(joint.name)}",
             'type': 'sphere',
-            'size': '5.0',
+            'size': f"{5.0 * s}", # Scale debug sphere too
             'rgba': '1 0 0 1',
             'pos': pos_str
         })
