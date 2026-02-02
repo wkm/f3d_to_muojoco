@@ -1,0 +1,150 @@
+# F3DToMuJoCo Export Manifest
+# Generated automatically - compare with .xml and meshes/
+
+export:
+  document: Simple2Wheel
+  units: mm
+  length_scale: 10.0
+
+files:
+  scene: scene.xml
+  robot: bot.xml
+  meshes: meshes/
+  log: export.log
+
+inputs:
+  export_path: /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel
+  debug_mode: false
+  actuators_enabled: true
+  actuator_type: motor
+  sensors_enabled: true
+
+model:
+  root_component: Simple2Wheel
+  total_components: 4
+  total_joints: 2
+  total_bodies: 3
+  occurrences:
+    - name: "body:1"
+      full_path: "body:1"
+      world_position: [0.000000, 0.000000, 0.000000]
+      bounding_box_min: [-215.020000, -0.020000, -125.010000]
+      bounding_box_max: [115.020000, 150.020000, 125.010000]
+      body_count: 1
+    - name: "l_wheel:1"
+      full_path: "body:1+l_wheel:1"
+      world_position: [0.000000, 0.000000, 0.000000]
+      bounding_box_min: [74.990000, -0.010000, -75.010000]
+      bounding_box_max: [115.010000, 150.010000, 75.010000]
+      body_count: 1
+    - name: "r_wheel:1"
+      full_path: "body:1+r_wheel:1"
+      world_position: [0.000000, 0.000000, 0.000000]
+      bounding_box_min: [-215.010000, -0.010000, -75.010000]
+      bounding_box_max: [-174.990000, 150.010000, 75.010000]
+      body_count: 1
+
+components:
+  - name: body_1
+    parent: base
+    position: [0.000000 0.000000 0.000000]
+    quaternion: [1.000000 0.000000 0.000000 0.000000]
+  - name: l_wheel_1
+    parent: body_1
+    position: [0.000000 0.000000 0.000000]
+    quaternion: [1.000000 0.000000 0.000000 0.000000]
+  - name: r_wheel_1
+    parent: body_1
+    position: [0.000000 0.000000 0.000000]
+    quaternion: [1.000000 0.000000 0.000000 0.000000]
+
+bodies:
+  - name: body_body
+    component: body_1
+    mesh: meshes/body_body.stl
+    color: [0.9647058823529412 0.9647058823529412 0.9529411764705882 1.0]
+  - name: l_wheel_l_wheel
+    component: l_wheel_1
+    mesh: meshes/l_wheel_l_wheel.stl
+    color: [0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0]
+  - name: r_wheel_r_wheel
+    component: r_wheel_1
+    mesh: meshes/r_wheel_r_wheel.stl
+    color: [0.15294117647058825 0.15294117647058825 0.15294117647058825 1.0]
+
+joints:
+  - name: Revolute_1
+    type: hinge
+    parent: body_1
+    child: l_wheel_1
+    position: [75.000000 75.000000 0.000000]
+    axis: [-1.000000 0.000000 0.000000]
+  - name: Revolute_2
+    type: hinge
+    parent: body_1
+    child: r_wheel_1
+    position: [-175.000000 75.000000 0.000000]
+    axis: [1.000000 0.000000 0.000000]
+
+actuators:
+  - name: Revolute_1_motor
+    type: motor
+    joint: Revolute_1
+    ctrlrange: [-1 1]
+  - name: Revolute_2_motor
+    type: motor
+    joint: Revolute_2
+    ctrlrange: [-1 1]
+
+sensors:
+  - name: Revolute_1_pos_sensor
+    type: jointpos
+    joint: Revolute_1
+  - name: Revolute_1_vel_sensor
+    type: jointvel
+    joint: Revolute_1
+  - name: Revolute_2_pos_sensor
+    type: jointpos
+    joint: Revolute_2
+  - name: Revolute_2_vel_sensor
+    type: jointvel
+    joint: Revolute_2
+
+joint_processing:
+  - joint: Revolute_1
+    fusion_type: Revolute
+    mujoco_type: hinge
+    occurrence_one: "l_wheel:1"
+    occurrence_two: "body:1"
+    attached_to: "l_wheel:1"
+    world_origin: [75.000000, 75.000000, 0.000000]
+    world_axis: [-1.000000, 0.000000, 0.000000]
+    local_origin: [75.000000, 75.000000, 0.000000]
+    local_axis: [-1.000000, 0.000000, 0.000000]
+  - joint: Revolute_2
+    fusion_type: Revolute
+    mujoco_type: hinge
+    occurrence_one: "r_wheel:1"
+    occurrence_two: "body:1"
+    attached_to: "r_wheel:1"
+    world_origin: [-175.000000, 75.000000, 0.000000]
+    world_axis: [1.000000, 0.000000, 0.000000]
+    local_origin: [-175.000000, 75.000000, 0.000000]
+    local_axis: [1.000000, 0.000000, 0.000000]
+
+appearance_extraction:
+  - body: body_body
+    source: body_appearance
+    appearance_name: ABS (White)
+    property_used: Color
+    rgba: [0.964706, 0.964706, 0.952941, 1.000000]
+  - body: l_wheel_l_wheel
+    source: body_appearance
+    appearance_name: Rubber - Soft
+    property_used: Color
+    rgba: [0.152941, 0.152941, 0.152941, 1.000000]
+  - body: r_wheel_r_wheel
+    source: body_appearance
+    appearance_name: Rubber - Soft
+    property_used: Color
+    rgba: [0.152941, 0.152941, 0.152941, 1.000000]

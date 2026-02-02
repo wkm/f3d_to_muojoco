@@ -34,6 +34,29 @@ class Exporter:
         self.enable_sensors = enable_sensors
         self.exported_joints = []  # Track joints for actuator/sensor generation
 
+        # Initialize log file
+        self.log_file = None
+        log_path = os.path.join(export_path, "export.log")
+        try:
+            self.log_file = open(log_path, "w", encoding="utf-8")
+        except Exception:
+            pass  # Fail silently if can't create log file
+
+        # Manifest data - tracks everything for YAML output
+        self.manifest = {
+            "inputs": {},
+            "files": {},
+            "model": {},
+            "components": [],
+            "bodies": [],
+            "joints": [],
+            "actuators": [],
+            "sensors": [],
+            "warnings": [],
+            "joint_processing": [],
+            "appearance_extraction": [],
+        }
+
         self.meshes_path = os.path.join(export_path, "meshes")
         if not os.path.exists(self.meshes_path):
             os.makedirs(self.meshes_path)
@@ -72,29 +95,107 @@ class Exporter:
             for joint in self.root_comp.allJoints:
                 self.all_joints.append(joint)
 
-                # Detailed logging only in debug mode
-                if self.debug_mode:
-                    try:
-                        o1 = joint.occurrenceOne
-                        o2 = joint.occurrenceTwo
-                        path1 = o1.fullPathName if o1 else "Root"
-                        path2 = o2.fullPathName if o2 else "Root"
-                        self.log(
-                            f"  Found joint '{joint.name}' connecting {path1} → {path2}"
-                        )
-                    except Exception:
-                        pass  # Ignore errors in debug logging
+                # Log joint connections (always, for debugging)
+                try:
+                    o1 = joint.occurrenceOne
+                    o2 = joint.occurrenceTwo
+                    path1 = o1.fullPathName if o1 else "Root"
+                    path2 = o2.fullPathName if o2 else "Root"
+                    joint_type = self._get_joint_type_name(joint)
+                    self.log(f"  Joint '{joint.name}' ({joint_type}): {path1} <-> {path2}")
+                except Exception:
+                    self.log(f"  Joint '{joint.name}': <error reading details>")
+
             self.log(f"Found {len(self.all_joints)} joint(s) in assembly")
+
+            # Now collect model metadata (after joints are counted)
+            self._collect_model_info(len(self.all_joints))
         except Exception as e:
             self.log(f"Warning: Failed to collect joints: {type(e).__name__}: {e}")
 
+    def _collect_model_info(self, joint_count):
+        """Collect model structure information for the manifest."""
+        s = self.length_scale
+
+        # Count totals
+        total_components = self.design.allComponents.count
+        total_bodies = sum(c.bRepBodies.count for c in self.design.allComponents)
+
+        self.manifest["model"] = {
+            "root_component": self.root_comp.name,
+            "total_components": total_components,
+            "total_joints": joint_count,
+            "total_bodies": total_bodies,
+            "occurrences": [],
+        }
+
+        self.log(f"Model: {self.root_comp.name} ({total_components} components, {total_bodies} bodies, {joint_count} joints)")
+
+        # Collect occurrence details
+        self._collect_occurrences_recursive(self.root_comp.occurrences, "")
+
+    def _collect_occurrences_recursive(self, occurrences, parent_path):
+        """Recursively collect occurrence information."""
+        s = self.length_scale
+        for occ in occurrences:
+            try:
+                full_path = occ.fullPathName
+                transform = occ.transform
+
+                # Extract transform components
+                trans = transform.translation
+                pos = [trans.x * s, trans.y * s, trans.z * s]
+
+                # Get bounding box
+                bb = occ.boundingBox
+                bb_min = [bb.minPoint.x * s, bb.minPoint.y * s, bb.minPoint.z * s]
+                bb_max = [bb.maxPoint.x * s, bb.maxPoint.y * s, bb.maxPoint.z * s]
+
+                occ_info = {
+                    "name": occ.name,
+                    "full_path": full_path,
+                    "world_position": pos,
+                    "bounding_box_min": bb_min,
+                    "bounding_box_max": bb_max,
+                    "body_count": occ.component.bRepBodies.count,
+                }
+                self.manifest["model"]["occurrences"].append(occ_info)
+
+                self.log(f"  Occurrence '{occ.name}': pos=({pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}), {occ.component.bRepBodies.count} bodies")
+
+                # Recurse into children
+                self._collect_occurrences_recursive(occ.childOccurrences, full_path)
+            except Exception as e:
+                self.log(f"  Occurrence '{occ.name}': <error: {type(e).__name__}>")
+
+    def _get_joint_type_name(self, joint):
+        """Get a readable name for the joint type."""
+        if not joint.jointMotion:
+            return "Rigid"
+        jt = joint.jointMotion.jointType
+        type_names = {
+            adsk.fusion.JointTypes.RevoluteJointType: "Revolute",
+            adsk.fusion.JointTypes.SliderJointType: "Slider",
+            adsk.fusion.JointTypes.CylindricalJointType: "Cylindrical",
+            adsk.fusion.JointTypes.PinSlotJointType: "PinSlot",
+            adsk.fusion.JointTypes.PlanarJointType: "Planar",
+            adsk.fusion.JointTypes.BallJointType: "Ball",
+            adsk.fusion.JointTypes.RigidJointType: "Rigid",
+        }
+        return type_names.get(jt, f"Unknown({jt})")
+
     def log(self, message):
         try:
-            print(f"[F3DToMuJoCo] {message}")
+            formatted_msg = f"[F3DToMuJoCo] {message}"
+            print(formatted_msg)
             # Write to the Text Commands palette
             text_palette = self.app.userInterface.palettes.itemById("TextCommands")
             if text_palette:
-                text_palette.writeText(f"[F3DToMuJoCo] {message}")
+                text_palette.writeText(formatted_msg)
+            # Write to log file
+            if self.log_file:
+                self.log_file.write(formatted_msg + "\n")
+                self.log_file.flush()
         except Exception:
             pass  # Fail silently if palette not available
 
@@ -142,12 +243,48 @@ class Exporter:
                     f"{joint.name} (connects siblings '{occ1.name}' and '{occ2.name}')"
                 )
 
-        # Construct Warning Message
+        # Check 3: Missing Physical Materials
+        missing_materials = []
+        for comp in self.design.allComponents:
+            # Skip empty components (no bodies)
+            if comp.bRepBodies.count == 0:
+                continue
+
+            # Skip root component if it's just a container
+            if comp == self.design.rootComponent and comp.bRepBodies.count == 0:
+                continue
+
+            # Try to get physical properties
+            has_valid_material = False
+            try:
+                props = comp.physicalProperties
+                if props and props.mass > 0:
+                    has_valid_material = True
+            except Exception:
+                pass
+
+            if not has_valid_material:
+                missing_materials.append(comp.name)
+
+        # Construct Warning Message and track in manifest
         msg = ""
         if duplicates:
             msg += "CRITICAL: Duplicate Component Names found!\n"
             msg += "This will cause mesh files to overwrite each other.\n"
             msg += f"Duplicates: {', '.join(duplicates[:5])}...\n\n"
+            for dup in duplicates:
+                self.manifest["warnings"].append(f"Duplicate component name: {dup}")
+
+        if missing_materials:
+            msg += "CRITICAL: Components without Physical Materials!\n"
+            msg += "MuJoCo requires mass and inertia for proper dynamics.\n"
+            msg += "Right-click each component → Physical Material → Assign material\n"
+            msg += f"Missing materials: {', '.join(missing_materials[:10])}\n"
+            if len(missing_materials) > 10:
+                msg += f"... and {len(missing_materials) - 10} more\n"
+            msg += "\n"
+            for mat in missing_materials:
+                self.manifest["warnings"].append(f"Missing physical material: {mat}")
 
         if flat_joints:
             msg += "WARNING: Flat Hierarchy / Sibling Joints detected.\n"
@@ -155,6 +292,8 @@ class Exporter:
             msg += "Joints between sibling components may NOT be exported correctly.\n"
             msg += "Please drag child components INSIDE their parent components in the Browser.\n"
             msg += f"Affected Joints: {', '.join(flat_joints[:5])}...\n\n"
+            for fj in flat_joints:
+                self.manifest["warnings"].append(f"Sibling joint: {fj}")
 
         if msg:
             msg += "Do you want to continue anyway?"
@@ -194,6 +333,10 @@ class Exporter:
             self.build_xml()
             progress.progressValue = total_steps
 
+            # 3. Save manifest
+            progress.message = "Saving manifest..."
+            self.save_manifest()
+
             self.log("Export completed successfully")
             _ui.messageBox("Export Complete!")
 
@@ -203,6 +346,7 @@ class Exporter:
             traceback.print_exc()
         finally:
             progress.hide()
+            self.close_log_file()
 
     def save_meshes(self, progress):
         # Iterate through all unique components
@@ -319,7 +463,18 @@ class Exporter:
         return self.format_quat(qw, qx, qy, qz)
 
     def build_xml(self):
-        root_elem = ET.Element("mujoco", {"model": self.root_comp.name})
+        """Build and save both bot.xml and scene.xml files."""
+        clean_model_name = self.clean_name(self.root_comp.name)
+
+        # Build bot.xml (robot model)
+        self._build_bot_xml(clean_model_name)
+
+        # Build scene.xml (environment that includes bot.xml)
+        self._build_scene_xml(clean_model_name)
+
+    def _build_bot_xml(self, model_name):
+        """Build the robot model XML (bot.xml)."""
+        root_elem = ET.Element("mujoco", {"model": model_name})
 
         # Add basic compiler and asset settings
         ET.SubElement(root_elem, "compiler", {"angle": "radian", "meshdir": "meshes"})
@@ -327,16 +482,6 @@ class Exporter:
         # Add default section (if actuators enabled)
         if self.enable_actuators:
             self._add_default_section(root_elem)
-
-        # Add visual settings for better lighting
-        visual = ET.SubElement(root_elem, "visual")
-        ET.SubElement(
-            visual,
-            "headlight",
-            {"ambient": ".4 .4 .4", "diffuse": ".8 .8 .8", "specular": "0.1 0.1 0.1"},
-        )
-        ET.SubElement(visual, "map", {"znear": "0.01"})
-        ET.SubElement(visual, "quality", {"shadowsize": "2048"})
 
         # Add assets (meshes)
         asset = ET.SubElement(root_elem, "asset")
@@ -353,32 +498,64 @@ class Exporter:
                 clean_body_name = self.clean_name(body.name)
                 mesh_name = f"{clean_comp_name}_{clean_body_name}"
 
-                # Fusion exports STLs in cm. We use them as-is (unitless/consistent).
                 ET.SubElement(
                     asset, "mesh", {"name": mesh_name, "file": f"{mesh_name}.stl"}
                 )
 
-        # Worldbody and recursively add bodies
+        # Worldbody with robot hierarchy
         worldbody = ET.SubElement(root_elem, "worldbody")
 
-        # Add a floor and directional light
-        ET.SubElement(
+        # Initialize recursion with Identity matrix (World Frame)
+        identity_transform = adsk.core.Matrix3D.create()
+
+        # ROOT WRAPPER FOR COORDINATE CORRECTION
+        # Fusion 360 often defaults to Y-Up. MuJoCo is Z-Up.
+        # The adapter is part of the robot so it works in any scene.
+        root_rot = math.pi / 2
+        root_adapter = ET.SubElement(
             worldbody,
-            "light",
-            {
-                "directional": "true",
-                "diffuse": ".8 .8 .8",
-                "pos": "0 0 10",
-                "dir": "0 0 -1",
-            },
-        )
-        ET.SubElement(
-            worldbody,
-            "geom",
-            {"name": "floor", "type": "plane", "size": "5 5 0.1", "rgba": ".9 .9 .9 1"},
+            "body",
+            {"name": "base", "pos": "0 0 0", "euler": f"{root_rot} 0 0"},
         )
 
-        # Add skybox and ground textures/materials
+        # Recursively process occurrences, attaching them to the ADAPTER
+        for occ in self.root_comp.occurrences:
+            self.process_occurrence(
+                occ, root_adapter, identity_transform, self.root_comp
+            )
+
+        # Add actuators and sensors
+        if self.enable_actuators:
+            self._add_actuators(root_elem)
+        if self.enable_sensors:
+            self._add_sensors(root_elem)
+
+        # Write bot.xml
+        xml_path = os.path.join(self.export_path, "bot.xml")
+        tree = ET.ElementTree(root_elem)
+        ET.indent(tree, space="  ", level=0)
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        self.log(f"Saved robot model to bot.xml")
+
+    def _build_scene_xml(self, model_name):
+        """Build the scene XML that includes the robot (scene.xml)."""
+        root_elem = ET.Element("mujoco", {"model": f"{model_name}_scene"})
+
+        # Include the robot model
+        ET.SubElement(root_elem, "include", {"file": "bot.xml"})
+
+        # Visual settings for better lighting
+        visual = ET.SubElement(root_elem, "visual")
+        ET.SubElement(
+            visual,
+            "headlight",
+            {"ambient": ".4 .4 .4", "diffuse": ".8 .8 .8", "specular": "0.1 0.1 0.1"},
+        )
+        ET.SubElement(visual, "map", {"znear": "0.01"})
+        ET.SubElement(visual, "quality", {"shadowsize": "2048"})
+
+        # Scene assets (textures, materials)
+        asset = ET.SubElement(root_elem, "asset")
         ET.SubElement(
             asset,
             "texture",
@@ -418,40 +595,35 @@ class Exporter:
             },
         )
 
-        # Initialize recursion with Identity matrix (World Frame)
-        identity_transform = adsk.core.Matrix3D.create()
-
-        # ROOT WRAPPER FOR COORDINATE CORRECTION
-        # Fusion 360 often defaults to Y-Up. MuJoCo is Z-Up.
-        # Since <compiler angle="radian"> is set, we use math.pi/2 (90 degrees).
-        root_rot = math.pi / 2
-        root_adapter = ET.SubElement(
+        # Worldbody with environment
+        worldbody = ET.SubElement(root_elem, "worldbody")
+        ET.SubElement(
             worldbody,
-            "body",
-            {"name": "root_adapter", "pos": "0 0 0", "euler": f"{root_rot} 0 0"},
+            "light",
+            {
+                "directional": "true",
+                "diffuse": ".8 .8 .8",
+                "pos": "0 0 10",
+                "dir": "0 0 -1",
+            },
+        )
+        ET.SubElement(
+            worldbody,
+            "geom",
+            {
+                "name": "floor",
+                "type": "plane",
+                "size": "5 5 0.1",
+                "material": "groundplane",
+            },
         )
 
-        # Recursively process occurrences, attaching them to the ADAPTER
-        for occ in self.root_comp.occurrences:
-            # The parent of these top-level occurrences is the Root Component
-            self.process_occurrence(
-                occ, root_adapter, identity_transform, self.root_comp
-            )
-
-        # Add actuators and sensors (after worldbody is complete)
-        if self.enable_actuators:
-            self._add_actuators(root_elem)
-        if self.enable_sensors:
-            self._add_sensors(root_elem)
-
-        # Write to file
-        xml_path = os.path.join(
-            self.export_path, f"{self.clean_name(self.root_comp.name)}.xml"
-        )
+        # Write scene.xml
+        xml_path = os.path.join(self.export_path, "scene.xml")
         tree = ET.ElementTree(root_elem)
-        # Indent for pretty printing
         ET.indent(tree, space="  ", level=0)
         tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        self.log(f"Saved scene to scene.xml")
 
     def process_occurrence(
         self, occ, parent_xml_elem, parent_world_transform, parent_context
@@ -484,8 +656,21 @@ class Exporter:
             {"name": clean_name, "pos": pos_str, "quat": quat_str},
         )
 
+        # Track component in manifest
+        parent_name = (
+            parent_xml_elem.get("name") if parent_xml_elem.tag == "body" else "worldbody"
+        )
+        self.manifest["components"].append(
+            {
+                "name": clean_name,
+                "parent": parent_name,
+                "position": pos_str,
+                "quaternion": quat_str,
+            }
+        )
+
         # 4. Add Inertial Properties
-        self.process_inertial(occ.component, body)
+        self.process_inertial(occ.component, body, clean_name)
 
         # 5. Add Joints
         self.process_joints(occ, body, parent_context)
@@ -499,45 +684,101 @@ class Exporter:
             mesh_name = f"{clean_comp_name}_{clean_body_name}"
 
             # Get specific color for this body
-            rgba_str = self.get_body_appearance_rgba(occ, brep_body)
+            rgba_str = self.get_body_appearance_rgba(occ, brep_body, mesh_name)
 
             ET.SubElement(
                 body, "geom", {"type": "mesh", "mesh": mesh_name, "rgba": rgba_str}
+            )
+
+            # Track body/mesh in manifest
+            self.manifest["bodies"].append(
+                {
+                    "name": mesh_name,
+                    "component": clean_name,
+                    "mesh": f"meshes/{mesh_name}.stl",
+                    "color": rgba_str,
+                }
             )
 
         # Process children
         for child_occ in occ.childOccurrences:
             self.process_occurrence(child_occ, body, current_world_transform, occ)
 
-    def get_body_appearance_rgba(self, occ, body):
+    def get_body_appearance_rgba(self, occ, body, mesh_name=None):
+        """Extract RGBA color from body appearance, tracking the source for debugging."""
         # Emergency Orange (Fallback)
         default_rgba = "1.0 0.5 0.0 1.0"
 
+        source = "fallback"
+        app = None
+        app_name = None
+
         # 1. Check Body Override (Highest Priority for granular visuals)
-        app = body.appearance
+        if body.appearance:
+            app = body.appearance
+            source = "body_appearance"
 
         # 2. Check Occurrence Override
-        if not app:
+        if not app and occ.appearance:
             app = occ.appearance
+            source = "occurrence_appearance"
 
         # 3. Check Physical Material Appearance
-        if not app and occ.component.material:
+        if not app and occ.component.material and occ.component.material.appearance:
             app = occ.component.material.appearance
+            source = "material_appearance"
+
+        if app:
+            app_name = app.name
 
         if not app:
+            # Track fallback case
+            if mesh_name:
+                self.manifest["appearance_extraction"].append({
+                    "body": mesh_name,
+                    "source": "fallback",
+                    "appearance_name": None,
+                    "property_used": None,
+                    "rgba": [1.0, 0.5, 0.0, 1.0],
+                })
             return default_rgba
 
-        color_val = self.find_color_in_appearance(app)
+        color_val, prop_used = self.find_color_in_appearance(app)
         if color_val:
-            return f"{color_val.red / 255.0} {color_val.green / 255.0} {color_val.blue / 255.0} {color_val.opacity / 255.0}"
+            rgba = [
+                color_val.red / 255.0,
+                color_val.green / 255.0,
+                color_val.blue / 255.0,
+                color_val.opacity / 255.0,
+            ]
+            rgba_str = f"{rgba[0]} {rgba[1]} {rgba[2]} {rgba[3]}"
 
-        if self.debug_mode:
-            self.log(
-                f"Warning: Could not extract color from appearance '{app.name}' on {occ.name}"
-            )
+            # Track successful extraction
+            if mesh_name:
+                self.manifest["appearance_extraction"].append({
+                    "body": mesh_name,
+                    "source": source,
+                    "appearance_name": app_name,
+                    "property_used": prop_used,
+                    "rgba": rgba,
+                })
+            return rgba_str
+
+        # Couldn't extract color from appearance
+        self.log(f"  Warning: Could not extract color from appearance '{app_name}' on {occ.name}")
+        if mesh_name:
+            self.manifest["appearance_extraction"].append({
+                "body": mesh_name,
+                "source": "fallback",
+                "appearance_name": app_name,
+                "property_used": None,
+                "rgba": [1.0, 0.5, 0.0, 1.0],
+                "error": f"No color property found in appearance '{app_name}'",
+            })
         return default_rgba
 
     def find_color_in_appearance(self, app):
+        """Find color property in appearance, returning (color_value, property_name) tuple."""
         # Priority list of property names
         priority_names = ["color_base", "Color", "opaque_albedo", "metal_f0"]
 
@@ -549,18 +790,18 @@ class Exporter:
                 # We try to cast it
                 color_prop = adsk.core.ColorProperty.cast(prop)
                 if color_prop and color_prop.value:
-                    return color_prop.value
+                    return (color_prop.value, name)
 
         # 2. Fallback: Search ALL properties for ANY ColorProperty
         for prop in app.appearanceProperties:
             if prop.constructor.name == "adsk::core::ColorProperty":
                 color_prop = adsk.core.ColorProperty.cast(prop)
                 if color_prop and color_prop.value:
-                    return color_prop.value
+                    return (color_prop.value, prop.name)
 
-        return None
+        return (None, None)
 
-    def process_inertial(self, comp, body_elem):
+    def process_inertial(self, comp, body_elem, comp_name=None):
         try:
             props = comp.physicalProperties
             mass = props.mass  # kg
@@ -587,6 +828,15 @@ class Exporter:
                 "inertial",
                 {"pos": com_str, "mass": str(mass), "fullinertia": full_inertia},
             )
+
+            # Track inertial data in manifest for all bodies of this component
+            if comp_name:
+                for body_data in self.manifest["bodies"]:
+                    if body_data["component"] == comp_name:
+                        body_data["mass"] = mass
+                        body_data["center_of_mass"] = com_str
+                        body_data["inertia"] = full_inertia
+
         except Exception:
             # Fallback: Estimate inertial properties from bounding box
             # This is critical - without inertia, MuJoCo dynamics don't work!
@@ -640,6 +890,15 @@ class Exporter:
                         },
                     )
 
+                    # Track estimated inertial data in manifest
+                    if comp_name:
+                        for body_data in self.manifest["bodies"]:
+                            if body_data["component"] == comp_name:
+                                body_data["mass"] = mass
+                                body_data["center_of_mass"] = com_str
+                                body_data["inertia"] = full_inertia
+                                body_data["estimated_inertia"] = True
+
                     if self.debug_mode:
                         self.log(
                             f"  Estimated: mass={mass:.4f}kg, volume={volume_m3 * 1e6:.1f}cm³"
@@ -683,13 +942,11 @@ class Exporter:
 
     def process_joints(self, occ, body_elem, target_parent):
         # Look for a joint that connects 'occ' to 'target_parent'
-        if self.debug_mode:
-            target_name = (
-                target_parent.fullPathName
-                if hasattr(target_parent, "fullPathName")
-                else "Root"
-            )
-            self.log(f"Processing joints for {occ.name} (parent: {target_name})")
+        target_name = (
+            target_parent.fullPathName
+            if hasattr(target_parent, "fullPathName")
+            else "Root"
+        )
 
         occ_token = self.get_token(occ)
         parent_token = self.get_token(target_parent)
@@ -718,24 +975,24 @@ class Exporter:
             )
 
             if match:
-                if self.debug_mode:
-                    self.log(f"  Found joint '{joint.name}' for {occ.name}")
                 self.add_joint_to_xml(joint, occ, body_elem)
                 found_joint = True
                 break
 
-        if not found_joint and self.debug_mode:
-            self.log(f"  No joint found for {occ.name} (will be rigidly attached)")
+        if not found_joint:
+            self.log(f"  No joint found for '{occ.name}' (rigidly attached to {target_name})")
 
     def add_joint_to_xml(self, joint, child_occ, body_elem):
         motion = joint.jointMotion
 
         mj_type = ""
+        fusion_type = self._get_joint_type_name(joint)
         if motion.jointType == adsk.fusion.JointTypes.RevoluteJointType:
             mj_type = "hinge"
         elif motion.jointType == adsk.fusion.JointTypes.SliderJointType:
             mj_type = "slide"
         else:
+            self.log(f"  Skipping joint '{joint.name}' - type '{fusion_type}' not supported")
             return  # Rigid, Ball, etc. not handled yet
 
         # Strategy: Use World-to-World transformation.
@@ -748,19 +1005,29 @@ class Exporter:
             joint.geometryOrOriginOne if is_child_occ_one else joint.geometryOrOriginTwo
         )
 
+        # Get occurrence names for logging
+        occ_one_name = joint.occurrenceOne.name if joint.occurrenceOne else "Root"
+        occ_two_name = joint.occurrenceTwo.name if joint.occurrenceTwo else "Root"
+
         # 1. Get Child World Transform
         child_world = child_occ.transform
         child_world_inv = child_world.copy()
         child_world_inv.invert()
 
-        # 2. Transform Origin: World -> Child Local
+        # 2. Capture World Origin before transform
+        s = self.length_scale
+        world_origin = geom.origin.copy()
+        world_origin_scaled = [world_origin.x * s, world_origin.y * s, world_origin.z * s]
+        world_axis = geom.primaryAxisVector.copy()
+        world_axis_vec = [world_axis.x, world_axis.y, world_axis.z]
+
+        # 3. Transform Origin: World -> Child Local
         origin = geom.origin.copy()
         origin.transformBy(child_world_inv)
-
-        s = self.length_scale
         pos_str = self.format_vec3(origin.x * s, origin.y * s, origin.z * s)
+        local_origin_scaled = [origin.x * s, origin.y * s, origin.z * s]
 
-        # 3. Transform Axis: World -> Child Local
+        # 4. Transform Axis: World -> Child Local
         axis_vec = geom.primaryAxisVector.copy()
         axis_vec.transformBy(child_world_inv)
 
@@ -772,25 +1039,29 @@ class Exporter:
             axis_vec.z /= axis_mag
 
         axis_str = self.format_vec3(axis_vec.x, axis_vec.y, axis_vec.z)
+        local_axis_vec = [axis_vec.x, axis_vec.y, axis_vec.z]
 
-        # Detailed joint position debugging
-        if self.debug_mode:
-            try:
-                bb = child_occ.boundingBox
-                self.log(f"  Joint '{joint.name}' on {child_occ.name}:")
-                self.log(
-                    f"    Bounding box: ({bb.minPoint.x * s:.1f}, {bb.minPoint.y * s:.1f}, {bb.minPoint.z * s:.1f}) to ({bb.maxPoint.x * s:.1f}, {bb.maxPoint.y * s:.1f}, {bb.maxPoint.z * s:.1f})"
-                )
-                self.log(f"    Local position: {pos_str}")
+        # Log joint processing details (always, for debugging)
+        self.log(f"  Processing joint '{joint.name}' ({fusion_type} -> {mj_type}):")
+        self.log(f"    Connects: {occ_one_name} <-> {occ_two_name}")
+        self.log(f"    Attached to: {child_occ.name}")
+        self.log(f"    World origin: ({world_origin_scaled[0]:.1f}, {world_origin_scaled[1]:.1f}, {world_origin_scaled[2]:.1f})")
+        self.log(f"    Local origin: ({local_origin_scaled[0]:.1f}, {local_origin_scaled[1]:.1f}, {local_origin_scaled[2]:.1f})")
+        self.log(f"    Local axis: ({local_axis_vec[0]:.3f}, {local_axis_vec[1]:.3f}, {local_axis_vec[2]:.3f})")
 
-                # Transform Local Pos back to World for comparison
-                check_pt = origin.copy()
-                check_pt.transformBy(child_world)  # Local -> World
-                self.log(
-                    f"    World position: ({check_pt.x * s:.1f}, {check_pt.y * s:.1f}, {check_pt.z * s:.1f})"
-                )
-            except Exception:
-                pass  # Ignore errors in debug logging
+        # Track joint processing in manifest
+        self.manifest["joint_processing"].append({
+            "joint": self.clean_name(joint.name),
+            "fusion_type": fusion_type,
+            "mujoco_type": mj_type,
+            "occurrence_one": occ_one_name,
+            "occurrence_two": occ_two_name,
+            "attached_to": child_occ.name,
+            "world_origin": world_origin_scaled,
+            "world_axis": world_axis_vec,
+            "local_origin": local_origin_scaled,
+            "local_axis": local_axis_vec,
+        })
 
         # 4. Limits
         extra_attrs = {}
@@ -830,6 +1101,25 @@ class Exporter:
                 "name": joint_name,
                 "mj_type": mj_type,  # 'hinge' or 'slide'
                 "has_limits": len(extra_attrs) > 0,
+                "limits": extra_attrs.get("range", None),
+            }
+        )
+
+        # Track joint in manifest
+        # Determine parent name from the joint
+        parent_occ = (
+            joint.occurrenceTwo if joint.occurrenceOne == child_occ else joint.occurrenceOne
+        )
+        parent_name = self.clean_name(parent_occ.name) if parent_occ else "root"
+
+        self.manifest["joints"].append(
+            {
+                "name": joint_name,
+                "type": mj_type,
+                "parent": parent_name,
+                "child": self.clean_name(child_occ.name),
+                "position": pos_str,
+                "axis": axis_str,
                 "limits": extra_attrs.get("range", None),
             }
         )
@@ -922,6 +1212,16 @@ class Exporter:
             # Add appropriate actuator type
             ET.SubElement(actuator_elem, self.actuator_type, attrs)
 
+            # Track actuator in manifest
+            self.manifest["actuators"].append(
+                {
+                    "name": actuator_name,
+                    "type": self.actuator_type,
+                    "joint": joint_name,
+                    "ctrlrange": attrs.get("ctrlrange"),
+                }
+            )
+
         self.log(
             f"Generated {len(self.exported_joints)} {self.actuator_type} actuator(s)"
         )
@@ -937,22 +1237,236 @@ class Exporter:
             joint_name = joint_info["name"]
 
             # Add position sensor
+            pos_sensor_name = f"{joint_name}_pos_sensor"
             ET.SubElement(
                 sensor_elem,
                 "jointpos",
-                {"name": f"{joint_name}_pos_sensor", "joint": joint_name},
+                {"name": pos_sensor_name, "joint": joint_name},
             )
 
             # Add velocity sensor
+            vel_sensor_name = f"{joint_name}_vel_sensor"
             ET.SubElement(
                 sensor_elem,
                 "jointvel",
-                {"name": f"{joint_name}_vel_sensor", "joint": joint_name},
+                {"name": vel_sensor_name, "joint": joint_name},
+            )
+
+            # Track sensors in manifest
+            self.manifest["sensors"].append(
+                {"name": pos_sensor_name, "type": "jointpos", "joint": joint_name}
+            )
+            self.manifest["sensors"].append(
+                {"name": vel_sensor_name, "type": "jointvel", "joint": joint_name}
             )
 
         self.log(
             f"Generated {len(self.exported_joints) * 2} sensor(s) ({len(self.exported_joints)} position + {len(self.exported_joints)} velocity)"
         )
+
+    def save_manifest(self):
+        """Generate and save YAML manifest with export metadata."""
+        # Populate export metadata (no timestamp to avoid diffs)
+        units_mgr = self.design.unitsManager
+        self.manifest["export"] = {
+            "document": self.root_comp.name,
+            "units": units_mgr.defaultLengthUnits,
+            "length_scale": self.length_scale,
+        }
+
+        # Populate inputs section
+        self.manifest["inputs"] = {
+            "export_path": self.export_path,
+            "debug_mode": self.debug_mode,
+            "actuators_enabled": self.enable_actuators,
+            "actuator_type": self.actuator_type if self.enable_actuators else None,
+            "sensors_enabled": self.enable_sensors,
+        }
+
+        # Add file references
+        self.manifest["files"] = {
+            "scene": "scene.xml",
+            "robot": "bot.xml",
+            "meshes": "meshes/",
+            "log": "export.log",
+        }
+
+        # Write YAML manually (no PyYAML dependency)
+        yaml_path = os.path.join(self.export_path, "manifest.yaml")
+
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            f.write("# F3DToMuJoCo Export Manifest\n")
+            f.write("# Generated automatically - compare with .xml and meshes/\n\n")
+
+            # Export section
+            f.write("export:\n")
+            self._write_yaml_dict(f, self.manifest["export"], indent=2)
+
+            # Files section
+            f.write("\nfiles:\n")
+            self._write_yaml_dict(f, self.manifest["files"], indent=2)
+
+            # Inputs section
+            f.write("\ninputs:\n")
+            self._write_yaml_dict(f, self.manifest["inputs"], indent=2)
+
+            # Model section
+            if self.manifest.get("model"):
+                f.write("\nmodel:\n")
+                model = self.manifest["model"]
+                f.write(f"  root_component: {self._yaml_str(model.get('root_component', ''))}\n")
+                f.write(f"  total_components: {model.get('total_components', 0)}\n")
+                f.write(f"  total_joints: {model.get('total_joints', 0)}\n")
+                f.write(f"  total_bodies: {model.get('total_bodies', 0)}\n")
+
+                if model.get("occurrences"):
+                    f.write("  occurrences:\n")
+                    for occ in model["occurrences"]:
+                        f.write(f"    - name: {self._yaml_str(occ['name'])}\n")
+                        f.write(f"      full_path: {self._yaml_str(occ['full_path'])}\n")
+                        f.write(f"      world_position: [{self._format_float_list(occ['world_position'])}]\n")
+                        f.write(f"      bounding_box_min: [{self._format_float_list(occ['bounding_box_min'])}]\n")
+                        f.write(f"      bounding_box_max: [{self._format_float_list(occ['bounding_box_max'])}]\n")
+                        f.write(f"      body_count: {occ['body_count']}\n")
+
+            # Components section
+            if self.manifest["components"]:
+                f.write("\ncomponents:\n")
+                for comp in self.manifest["components"]:
+                    f.write(f"  - name: {self._yaml_str(comp['name'])}\n")
+                    f.write(f"    parent: {self._yaml_str(comp.get('parent', '~'))}\n")
+                    if comp.get("position"):
+                        f.write(f"    position: [{comp['position']}]\n")
+                    if comp.get("quaternion"):
+                        f.write(f"    quaternion: [{comp['quaternion']}]\n")
+
+            # Bodies (meshes) section
+            if self.manifest["bodies"]:
+                f.write("\nbodies:\n")
+                for body in self.manifest["bodies"]:
+                    f.write(f"  - name: {self._yaml_str(body['name'])}\n")
+                    f.write(f"    component: {self._yaml_str(body['component'])}\n")
+                    f.write(f"    mesh: {self._yaml_str(body['mesh'])}\n")
+                    if body.get("mass") is not None:
+                        f.write(f"    mass: {body['mass']:.6f}\n")
+                    if body.get("center_of_mass"):
+                        f.write(f"    center_of_mass: [{body['center_of_mass']}]\n")
+                    if body.get("inertia"):
+                        f.write(f"    inertia: [{body['inertia']}]\n")
+                    if body.get("color"):
+                        f.write(f"    color: [{body['color']}]\n")
+                    if body.get("estimated_inertia"):
+                        f.write(f"    estimated_inertia: true\n")
+
+            # Joints section
+            if self.manifest["joints"]:
+                f.write("\njoints:\n")
+                for joint in self.manifest["joints"]:
+                    f.write(f"  - name: {self._yaml_str(joint['name'])}\n")
+                    f.write(f"    type: {joint['type']}\n")
+                    f.write(f"    parent: {self._yaml_str(joint['parent'])}\n")
+                    f.write(f"    child: {self._yaml_str(joint['child'])}\n")
+                    if joint.get("position"):
+                        f.write(f"    position: [{joint['position']}]\n")
+                    if joint.get("axis"):
+                        f.write(f"    axis: [{joint['axis']}]\n")
+                    if joint.get("limits"):
+                        f.write(f"    limits: [{joint['limits']}]\n")
+
+            # Actuators section
+            if self.manifest["actuators"]:
+                f.write("\nactuators:\n")
+                for act in self.manifest["actuators"]:
+                    f.write(f"  - name: {self._yaml_str(act['name'])}\n")
+                    f.write(f"    type: {act['type']}\n")
+                    f.write(f"    joint: {self._yaml_str(act['joint'])}\n")
+                    if act.get("ctrlrange"):
+                        f.write(f"    ctrlrange: [{act['ctrlrange']}]\n")
+
+            # Sensors section
+            if self.manifest["sensors"]:
+                f.write("\nsensors:\n")
+                for sensor in self.manifest["sensors"]:
+                    f.write(f"  - name: {self._yaml_str(sensor['name'])}\n")
+                    f.write(f"    type: {sensor['type']}\n")
+                    f.write(f"    joint: {self._yaml_str(sensor['joint'])}\n")
+
+            # Joint processing debug section
+            if self.manifest.get("joint_processing"):
+                f.write("\njoint_processing:\n")
+                for jp in self.manifest["joint_processing"]:
+                    f.write(f"  - joint: {self._yaml_str(jp['joint'])}\n")
+                    f.write(f"    fusion_type: {jp['fusion_type']}\n")
+                    f.write(f"    mujoco_type: {jp['mujoco_type']}\n")
+                    f.write(f"    occurrence_one: {self._yaml_str(jp['occurrence_one'])}\n")
+                    f.write(f"    occurrence_two: {self._yaml_str(jp['occurrence_two'])}\n")
+                    f.write(f"    attached_to: {self._yaml_str(jp['attached_to'])}\n")
+                    f.write(f"    world_origin: [{self._format_float_list(jp['world_origin'])}]\n")
+                    f.write(f"    world_axis: [{self._format_float_list(jp['world_axis'])}]\n")
+                    f.write(f"    local_origin: [{self._format_float_list(jp['local_origin'])}]\n")
+                    f.write(f"    local_axis: [{self._format_float_list(jp['local_axis'])}]\n")
+
+            # Appearance extraction debug section
+            if self.manifest.get("appearance_extraction"):
+                f.write("\nappearance_extraction:\n")
+                for ae in self.manifest["appearance_extraction"]:
+                    f.write(f"  - body: {self._yaml_str(ae['body'])}\n")
+                    f.write(f"    source: {ae['source']}\n")
+                    if ae.get("appearance_name"):
+                        f.write(f"    appearance_name: {self._yaml_str(ae['appearance_name'])}\n")
+                    if ae.get("property_used"):
+                        f.write(f"    property_used: {ae['property_used']}\n")
+                    f.write(f"    rgba: [{self._format_float_list(ae['rgba'])}]\n")
+                    if ae.get("error"):
+                        f.write(f"    error: {self._yaml_str(ae['error'])}\n")
+
+            # Warnings section
+            if self.manifest["warnings"]:
+                f.write("\nwarnings:\n")
+                for warning in self.manifest["warnings"]:
+                    f.write(f"  - {self._yaml_str(warning)}\n")
+
+        self.log(f"Saved manifest to {yaml_path}")
+
+    def _write_yaml_dict(self, f, d, indent=0):
+        """Write a dictionary as YAML with given indentation."""
+        prefix = " " * indent
+        for key, value in d.items():
+            if value is None:
+                f.write(f"{prefix}{key}: ~\n")
+            elif isinstance(value, bool):
+                f.write(f"{prefix}{key}: {str(value).lower()}\n")
+            elif isinstance(value, (int, float)):
+                f.write(f"{prefix}{key}: {value}\n")
+            elif isinstance(value, str):
+                f.write(f"{prefix}{key}: {self._yaml_str(value)}\n")
+            elif isinstance(value, list):
+                f.write(f"{prefix}{key}: [{', '.join(str(v) for v in value)}]\n")
+            else:
+                f.write(f"{prefix}{key}: {value}\n")
+
+    def _yaml_str(self, s):
+        """Escape a string for YAML output."""
+        if s is None:
+            return "~"
+        s = str(s)
+        # Quote if contains special chars
+        if any(c in s for c in ":#[]{}|>&*!?,\\\"'"):
+            return f'"{s}"'
+        return s
+
+    def _format_float_list(self, values, decimals=6):
+        """Format a list of floats for YAML output."""
+        return ", ".join(f"{v:.{decimals}f}" for v in values)
+
+    def close_log_file(self):
+        """Close the log file if it's open."""
+        if self.log_file:
+            try:
+                self.log_file.close()
+            except Exception:
+                pass
+            self.log_file = None
 
 
 class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):

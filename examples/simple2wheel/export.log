@@ -1,0 +1,32 @@
+[F3DToMuJoCo] Initializing exporter (document units: mm, scale factor: 10.000000)
+[F3DToMuJoCo] Collecting joints from assembly...
+[F3DToMuJoCo]   Joint 'Revolute 1' (Revolute): body:1+l_wheel:1 <-> body:1
+[F3DToMuJoCo]   Joint 'Revolute 2' (Revolute): body:1+r_wheel:1 <-> body:1
+[F3DToMuJoCo] Found 2 joint(s) in assembly
+[F3DToMuJoCo] Model: Simple2Wheel (4 components, 3 bodies, 2 joints)
+[F3DToMuJoCo]   Occurrence 'body:1': pos=(0.0, 0.0, 0.0), 1 bodies
+[F3DToMuJoCo]   Occurrence 'l_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
+[F3DToMuJoCo]   Occurrence 'r_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
+[F3DToMuJoCo] Beginning export to /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel
+[F3DToMuJoCo] No physical material on body, using estimated inertial properties
+[F3DToMuJoCo]   No joint found for 'body:1' (rigidly attached to Root)
+[F3DToMuJoCo] No physical material on l_wheel, using estimated inertial properties
+[F3DToMuJoCo]   Processing joint 'Revolute 1' (Revolute -> hinge):
+[F3DToMuJoCo]     Connects: l_wheel:1 <-> body:1
+[F3DToMuJoCo]     Attached to: l_wheel:1
+[F3DToMuJoCo]     World origin: (75.0, 75.0, 0.0)
+[F3DToMuJoCo]     Local origin: (75.0, 75.0, 0.0)
+[F3DToMuJoCo]     Local axis: (-1.000, 0.000, 0.000)
+[F3DToMuJoCo] No physical material on r_wheel, using estimated inertial properties
+[F3DToMuJoCo]   Processing joint 'Revolute 2' (Revolute -> hinge):
+[F3DToMuJoCo]     Connects: r_wheel:1 <-> body:1
+[F3DToMuJoCo]     Attached to: r_wheel:1
+[F3DToMuJoCo]     World origin: (-175.0, 75.0, 0.0)
+[F3DToMuJoCo]     Local origin: (-175.0, 75.0, 0.0)
+[F3DToMuJoCo]     Local axis: (1.000, 0.000, 0.000)
+[F3DToMuJoCo] Generated 2 motor actuator(s)
+[F3DToMuJoCo] Generated 4 sensor(s) (2 position + 2 velocity)
+[F3DToMuJoCo] Saved robot model to bot.xml
+[F3DToMuJoCo] Saved scene to scene.xml
+[F3DToMuJoCo] Saved manifest to /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel/manifest.yaml
+[F3DToMuJoCo] Export completed successfully
