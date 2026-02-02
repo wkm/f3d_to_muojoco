@@ -1,7 +1,10 @@
 #Author-Gemini Agent
 #Description-Exports Fusion 360 designs to MuJoCo MJCF format.
 
-import adsk.core, adsk.fusion, adsk.cam, traceback
+import adsk.core
+import adsk.fusion
+import adsk.cam
+import traceback
 import os
 import xml.etree.ElementTree as ET
 import math
@@ -46,8 +49,8 @@ class Exporter:
         try:
             units_mgr = self.design.unitsManager
             doc_units = units_mgr.defaultLengthUnits
-            self.log(f"--- UNIT DIAGNOSTICS ---")
-            self.log(f"  Internal Units: cm")
+            self.log("--- UNIT DIAGNOSTICS ---")
+            self.log("  Internal Units: cm")
             self.log(f"  Document Units: {doc_units}")
             self.log(f"  Scale Factor (cm -> {doc_units}): {self.length_scale}")
             
@@ -62,11 +65,11 @@ class Exporter:
                     path1 = o1.fullPathName if o1 else "None"
                     path2 = o2.fullPathName if o2 else "None"
                     self.log(f"  Joint proxy found: '{joint.name}' | Occ1: {path1} | Occ2: {path2}")
-                except:
-                    pass
+                except Exception:
+                    pass  # Ignore errors in debug logging
             self.log(f"--- TOTAL JOINTS FOUND: {len(self.all_joints)} ---")
-        except:
-            pass # Fail safe
+        except Exception as e:
+            self.log(f"Warning: Failed to collect joints: {type(e).__name__}: {e}")
 
     def log(self, message):
         try:
@@ -75,15 +78,15 @@ class Exporter:
             text_palette = self.app.userInterface.palettes.itemById('TextCommands')
             if text_palette:
                 text_palette.writeText(f"[F3DToMuJoCo] {message}")
-        except:
-            pass # Fail silently if palette not found
+        except Exception:
+            pass  # Fail silently if palette not available
 
     def get_parent_occurrence(self, occ):
         # Helper to safely get the parent occurrence
         # Returns None if the parent is the Root Component
         try:
             return occ.assemblyContext
-        except:
+        except Exception:
             return None
 
     def validate_design(self):
@@ -102,14 +105,16 @@ class Exporter:
         # Check 2: Flat Hierarchy (Joints between siblings)
         flat_joints = []
         for joint in self.root_comp.allJoints:
-            if not joint.jointMotion: continue
-            
+            if not joint.jointMotion:
+                continue
+
             occ1 = joint.occurrenceOne
             occ2 = joint.occurrenceTwo
             
             # Skip if joint connects to Root (one occ is None) - this is usually fine (grounded)
-            if not occ1 or not occ2: continue
-            
+            if not occ1 or not occ2:
+                continue
+
             # Check if they share the same parent
             parent1 = self.get_parent_occurrence(occ1)
             parent2 = self.get_parent_occurrence(occ2)
@@ -154,11 +159,13 @@ class Exporter:
             progress.show('Exporting to MuJoCo', 'Initializing...', 0, total_steps, 0)
             
             # 1. Export Meshes
-            if progress.wasCancelled: return
+            if progress.wasCancelled:
+                return
             self.save_meshes(progress)
             
             # 2. Build MJCF XML
-            if progress.wasCancelled: return
+            if progress.wasCancelled:
+                return
             progress.message = "Building MJCF XML..."
             self.build_xml()
             progress.progressValue = total_steps
@@ -177,8 +184,9 @@ class Exporter:
         # Iterate through all unique components
         current_step = 0
         for comp in self.design.allComponents:
-            if progress.wasCancelled: return
-            
+            if progress.wasCancelled:
+                return
+
             # Skip the root component mesh export (it usually just holds sub-components)
             # If root has bodies, we might want to export them? Let's allow it if it has bodies.
             # But usually root is just a container. Let's stick to skipping for now unless needed.
@@ -287,7 +295,7 @@ class Exporter:
         root_elem = ET.Element('mujoco', {'model': self.root_comp.name})
         
         # Add basic compiler and asset settings
-        compiler = ET.SubElement(root_elem, 'compiler', {'angle': 'radian', 'meshdir': 'meshes'})
+        ET.SubElement(root_elem, 'compiler', {'angle': 'radian', 'meshdir': 'meshes'})
         
         # Add visual settings for better lighting
         visual = ET.SubElement(root_elem, 'visual')
@@ -299,8 +307,9 @@ class Exporter:
         asset = ET.SubElement(root_elem, 'asset')
         for comp in self.design.allComponents:
             # Skip root if empty (consistent with save_meshes)
-            if comp == self.root_comp and comp.bRepBodies.count == 0: continue
-            
+            if comp == self.root_comp and comp.bRepBodies.count == 0:
+                continue
+
             clean_comp_name = self.clean_name(comp.name)
             
             # Register a mesh asset for EACH body
@@ -429,17 +438,20 @@ class Exporter:
         
         # 1. Check Body Override (Highest Priority for granular visuals)
         app = body.appearance
-        if app: self.log(f"Found appearance on Body: {app.name}")
+        if app:
+            self.log(f"Found appearance on Body: {app.name}")
 
         # 2. Check Occurrence Override
         if not app:
             app = occ.appearance
-            if app: self.log(f"Found appearance on Occurrence: {app.name}")
+            if app:
+                self.log(f"Found appearance on Occurrence: {app.name}")
         
         # 3. Check Physical Material Appearance
         if not app and occ.component.material:
             app = occ.component.material.appearance
-            if app: self.log(f"Found appearance on Material: {app.name}")
+            if app:
+                self.log(f"Found appearance on Material: {app.name}")
 
         # Note: We skipped 'component.appearance' because it doesn't exist.
         
@@ -503,15 +515,15 @@ class Exporter:
                 'mass': str(mass),
                 'fullinertia': full_inertia
             })
-        except:
+        except Exception as e:
             # Fallback if physical properties fail (e.g. empty component)
-            pass
+            self.log(f"Warning: Failed to extract inertial properties for {comp.name}: {type(e).__name__}")
 
     def get_token(self, obj):
         # Safely get entityToken for comparison
         try:
             return obj.entityToken if obj else "ROOT"
-        except:
+        except Exception:
             return "UNKNOWN"
 
     def process_joints(self, occ, body_elem, target_parent):
@@ -525,8 +537,9 @@ class Exporter:
         
         found_joint = False
         for joint in self.all_joints:
-            if not joint.jointMotion: continue
-            
+            if not joint.jointMotion:
+                continue
+
             # Check if this joint connects occ to its parent
             o1 = joint.occurrenceOne
             o2 = joint.occurrenceTwo
@@ -610,8 +623,8 @@ class Exporter:
             check_pt = origin.copy()
             check_pt.transformBy(child_world) # Local -> World
             self.log(f"    Calc World Pos (scaled): {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
-        except:
-            pass
+        except Exception:
+            pass  # Ignore errors in debug logging
             
         # 4. Limits
         extra_attrs = {}
@@ -671,7 +684,7 @@ class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
             else:
                 _ui.messageBox('Export cancelled.')
 
-        except:
+        except Exception:
             if _ui:
                 _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -683,7 +696,7 @@ class ExportCommandDestroyHandler(adsk.core.CommandEventHandler):
             # When the command is done, terminate the script
             # This releases the python script from memory
             adsk.terminate()
-        except:
+        except Exception:
             if _ui:
                 _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -711,7 +724,7 @@ class ExportCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             # Add Debug Mode Checkbox
             inputs.addBoolValueInput('debug_mode', 'Debug Mode (Visual Spheres)', True, '', False)
 
-        except:
+        except Exception:
             if _ui:
                 _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -741,7 +754,7 @@ def run(context):
         # Execute the command immediately
         cmdDef.execute()
 
-    except:
+    except Exception:
         if _ui:
             _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -751,6 +764,6 @@ def stop(context):
         cmdDef = _ui.commandDefinitions.itemById(CMD_ID)
         if cmdDef:
             cmdDef.deleteMe()
-    except:
+    except Exception:
         if _ui:
             _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
