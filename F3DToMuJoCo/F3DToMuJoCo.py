@@ -39,7 +39,13 @@ class Exporter:
         # Flatten all joints in the design into one list
         self.all_joints = []
         try:
-            self.log(f"--- DETECTED UNIT SCALE: {self.length_scale} (1 cm = {self.length_scale} doc units) ---")
+            units_mgr = self.design.unitsManager
+            doc_units = units_mgr.defaultLengthUnits
+            self.log(f"--- UNIT DIAGNOSTICS ---")
+            self.log(f"  Internal Units: cm")
+            self.log(f"  Document Units: {doc_units}")
+            self.log(f"  Scale Factor (cm -> {doc_units}): {self.length_scale}")
+            
             self.log("--- SCANNING ALL JOINTS ---")
             for comp in self.design.allComponents:
                 for joint in comp.allJoints:
@@ -579,13 +585,13 @@ class Exporter:
             self.log(f"  DEBUG Joint '{joint.name}':")
             self.log(f"    Target Body: {child_occ.name}")
             # Scale BB for comparison logging
-            self.log(f"    World BB Center: {bb.minPoint.x*s:.3f},{bb.minPoint.y*s:.3f},{bb.minPoint.z*s:.3f} to {bb.maxPoint.x*s:.3f},{bb.maxPoint.y*s:.3f},{bb.maxPoint.z*s:.3f}")
-            self.log(f"    Calc Local Pos: {pos_str}")
+            self.log(f"    World BB Center (scaled): {bb.minPoint.x*s:.3f},{bb.minPoint.y*s:.3f},{bb.minPoint.z*s:.3f} to {bb.maxPoint.x*s:.3f},{bb.maxPoint.y*s:.3f},{bb.maxPoint.z*s:.3f}")
+            self.log(f"    Calc Local Pos (scaled): {pos_str}")
             
             # Transform Local Pos back to World for comparison?
             check_pt = origin.copy()
             check_pt.transformBy(child_occ.transform) # Local -> World
-            self.log(f"    Calc World Pos: {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
+            self.log(f"    Calc World Pos (scaled): {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
         except:
             pass
             
