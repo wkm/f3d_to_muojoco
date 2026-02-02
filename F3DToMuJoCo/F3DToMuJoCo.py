@@ -49,25 +49,23 @@ class Exporter:
         try:
             units_mgr = self.design.unitsManager
             doc_units = units_mgr.defaultLengthUnits
-            self.log("--- UNIT DIAGNOSTICS ---")
-            self.log("  Internal Units: cm")
-            self.log(f"  Document Units: {doc_units}")
-            self.log(f"  Scale Factor (cm -> {doc_units}): {self.length_scale}")
-            
-            self.log("--- SCANNING ALL JOINTS (ROOT CONTEXT) ---")
+            self.log(f"Initializing exporter (document units: {doc_units}, scale factor: {self.length_scale:.6f})")
+
+            self.log("Collecting joints from assembly...")
             for joint in self.root_comp.allJoints:
                 self.all_joints.append(joint)
-                
-                # Debug logging
-                try:
-                    o1 = joint.occurrenceOne
-                    o2 = joint.occurrenceTwo
-                    path1 = o1.fullPathName if o1 else "None"
-                    path2 = o2.fullPathName if o2 else "None"
-                    self.log(f"  Joint proxy found: '{joint.name}' | Occ1: {path1} | Occ2: {path2}")
-                except Exception:
-                    pass  # Ignore errors in debug logging
-            self.log(f"--- TOTAL JOINTS FOUND: {len(self.all_joints)} ---")
+
+                # Detailed logging only in debug mode
+                if self.debug_mode:
+                    try:
+                        o1 = joint.occurrenceOne
+                        o2 = joint.occurrenceTwo
+                        path1 = o1.fullPathName if o1 else "Root"
+                        path2 = o2.fullPathName if o2 else "Root"
+                        self.log(f"  Found joint '{joint.name}' connecting {path1} → {path2}")
+                    except Exception:
+                        pass  # Ignore errors in debug logging
+            self.log(f"Found {len(self.all_joints)} joint(s) in assembly")
         except Exception as e:
             self.log(f"Warning: Failed to collect joints: {type(e).__name__}: {e}")
 
@@ -151,30 +149,30 @@ class Exporter:
 
         progress = self.app.userInterface.createProgressDialog()
         try:
-            self.log(f"Starting export to: {self.export_path}")
-            
+            self.log(f"Beginning export to {self.export_path}")
+
             # Count steps: Total Components + 1 (XML Build)
             total_steps = self.design.allComponents.count + 1
-            
+
             progress.show('Exporting to MuJoCo', 'Initializing...', 0, total_steps, 0)
-            
+
             # 1. Export Meshes
             if progress.wasCancelled:
                 return
             self.save_meshes(progress)
-            
+
             # 2. Build MJCF XML
             if progress.wasCancelled:
                 return
             progress.message = "Building MJCF XML..."
             self.build_xml()
             progress.progressValue = total_steps
-            
-            self.log("Export finished successfully.")
+
+            self.log("Export completed successfully")
             _ui.messageBox('Export Complete!')
-            
+
         except Exception as e:
-            self.log(f"Error: {str(e)}")
+            self.log(f"Export failed: {str(e)}")
             _ui.messageBox(f"Export Failed:\n{str(e)}")
             traceback.print_exc()
         finally:
@@ -209,9 +207,10 @@ class Exporter:
                 # but cleaning might collide. Fusion default is "Body1", "Body2".
                 stl_name = f"{clean_comp_name}_{clean_body_name}.stl"
                 full_path = os.path.join(self.meshes_path, stl_name)
-                
-                self.log(f"Saving mesh: {stl_name}")
-                
+
+                if self.debug_mode:
+                    self.log(f"Exporting mesh: {stl_name}")
+
                 # Create STL export options for the BODY
                 stl_options = self.export_mgr.createSTLExportOptions(body, full_path)
                 stl_options.sendToPrintUtility = False
@@ -438,33 +437,24 @@ class Exporter:
         
         # 1. Check Body Override (Highest Priority for granular visuals)
         app = body.appearance
-        if app:
-            self.log(f"Found appearance on Body: {app.name}")
 
         # 2. Check Occurrence Override
         if not app:
             app = occ.appearance
-            if app:
-                self.log(f"Found appearance on Occurrence: {app.name}")
-        
+
         # 3. Check Physical Material Appearance
         if not app and occ.component.material:
             app = occ.component.material.appearance
-            if app:
-                self.log(f"Found appearance on Material: {app.name}")
 
-        # Note: We skipped 'component.appearance' because it doesn't exist.
-        
         if not app:
-            # self.log(f"No appearance found for {occ.name} / {body.name}") 
-            # Reduced logging to avoid spam
             return default_rgba
 
         color_val = self.find_color_in_appearance(app)
         if color_val:
             return f"{color_val.red/255.0} {color_val.green/255.0} {color_val.blue/255.0} {color_val.opacity/255.0}"
-        
-        self.log(f"Appearance found ({app.name}) but could not extract RGB color.")
+
+        if self.debug_mode:
+            self.log(f"Warning: Could not extract color from appearance '{app.name}' on {occ.name}")
         return default_rgba
 
     def find_color_in_appearance(self, app):
@@ -517,7 +507,8 @@ class Exporter:
             })
         except Exception as e:
             # Fallback if physical properties fail (e.g. empty component)
-            self.log(f"Warning: Failed to extract inertial properties for {comp.name}: {type(e).__name__}")
+            if self.debug_mode:
+                self.log(f"Warning: Could not extract inertial properties for {comp.name}: {type(e).__name__}")
 
     def get_token(self, obj):
         # Safely get entityToken for comparison
@@ -528,10 +519,10 @@ class Exporter:
 
     def process_joints(self, occ, body_elem, target_parent):
         # Look for a joint that connects 'occ' to 'target_parent'
-        self.log(f"Searching joints for occurrence: {occ.fullPathName}")
-        target_name = target_parent.fullPathName if hasattr(target_parent, 'fullPathName') else "ROOT"
-        self.log(f"  Target Parent: {target_name}")
-        
+        if self.debug_mode:
+            target_name = target_parent.fullPathName if hasattr(target_parent, 'fullPathName') else "Root"
+            self.log(f"Processing joints for {occ.name} (parent: {target_name})")
+
         occ_token = self.get_token(occ)
         parent_token = self.get_token(target_parent)
         
@@ -558,13 +549,14 @@ class Exporter:
                     (c2_token == occ_token and c1_token == parent_token)
             
             if match:
-                self.log(f"  MATCH FOUND: Joint '{joint.name}' connects '{occ.name}' to its parent.")
+                if self.debug_mode:
+                    self.log(f"  Found joint '{joint.name}' for {occ.name}")
                 self.add_joint_to_xml(joint, occ, body_elem)
                 found_joint = True
-                break 
-        
-        if not found_joint:
-            self.log(f"  No joint found connecting '{occ.name}' to its expected parent.")
+                break
+
+        if not found_joint and self.debug_mode:
+            self.log(f"  No joint found for {occ.name} (will be rigidly attached)")
 
     def add_joint_to_xml(self, joint, child_occ, body_elem):
         motion = joint.jointMotion
@@ -609,22 +601,21 @@ class Exporter:
             axis_vec.z /= axis_mag
 
         axis_str = self.format_vec3(axis_vec.x, axis_vec.y, axis_vec.z)
-        
-        # DEBUG: Check Bounding Box vs Joint Pos
-        try:
-            bb = child_occ.boundingBox
-            self.log(f"  DEBUG Joint '{joint.name}':")
-            self.log(f"    Target Body: {child_occ.name}")
-            # Scale BB for comparison logging
-            self.log(f"    World BB Center (scaled): {bb.minPoint.x*s:.3f},{bb.minPoint.y*s:.3f},{bb.minPoint.z*s:.3f} to {bb.maxPoint.x*s:.3f},{bb.maxPoint.y*s:.3f},{bb.maxPoint.z*s:.3f}")
-            self.log(f"    Calc Local Pos (scaled): {pos_str}")
-            
-            # Transform Local Pos back to World for comparison?
-            check_pt = origin.copy()
-            check_pt.transformBy(child_world) # Local -> World
-            self.log(f"    Calc World Pos (scaled): {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
-        except Exception:
-            pass  # Ignore errors in debug logging
+
+        # Detailed joint position debugging
+        if self.debug_mode:
+            try:
+                bb = child_occ.boundingBox
+                self.log(f"  Joint '{joint.name}' on {child_occ.name}:")
+                self.log(f"    Bounding box: ({bb.minPoint.x*s:.1f}, {bb.minPoint.y*s:.1f}, {bb.minPoint.z*s:.1f}) to ({bb.maxPoint.x*s:.1f}, {bb.maxPoint.y*s:.1f}, {bb.maxPoint.z*s:.1f})")
+                self.log(f"    Local position: {pos_str}")
+
+                # Transform Local Pos back to World for comparison
+                check_pt = origin.copy()
+                check_pt.transformBy(child_world) # Local -> World
+                self.log(f"    World position: ({check_pt.x*s:.1f}, {check_pt.y*s:.1f}, {check_pt.z*s:.1f})")
+            except Exception:
+                pass  # Ignore errors in debug logging
             
         # 4. Limits
         extra_attrs = {}
