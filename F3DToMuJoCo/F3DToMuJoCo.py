@@ -37,7 +37,9 @@ class Exporter:
         self._collect_all_joints()
 
     def _collect_all_joints(self):
-        # Flatten all joints in the design into one list
+        # Collect all joints from the root component context.
+        # root_comp.allJoints returns proxies for all joints in the hierarchy,
+        # which means their geometry and occurrences are in the World (Root) context.
         self.all_joints = []
         try:
             units_mgr = self.design.unitsManager
@@ -47,20 +49,19 @@ class Exporter:
             self.log(f"  Document Units: {doc_units}")
             self.log(f"  Scale Factor (cm -> {doc_units}): {self.length_scale}")
             
-            self.log("--- SCANNING ALL JOINTS ---")
-            for comp in self.design.allComponents:
-                for joint in comp.allJoints:
-                    self.all_joints.append(joint)
-                    
-                    # Debug logging
-                    try:
-                        o1 = joint.occurrenceOne
-                        o2 = joint.occurrenceTwo
-                        path1 = o1.fullPathName if o1 else "None"
-                        path2 = o2.fullPathName if o2 else "None"
-                        self.log(f"  Joint found: '{joint.name}' in '{comp.name}' | Occ1: {path1} | Occ2: {path2}")
-                    except:
-                        pass
+            self.log("--- SCANNING ALL JOINTS (ROOT CONTEXT) ---")
+            for joint in self.root_comp.allJoints:
+                self.all_joints.append(joint)
+                
+                # Debug logging
+                try:
+                    o1 = joint.occurrenceOne
+                    o2 = joint.occurrenceTwo
+                    path1 = o1.fullPathName if o1 else "None"
+                    path2 = o2.fullPathName if o2 else "None"
+                    self.log(f"  Joint proxy found: '{joint.name}' | Occ1: {path1} | Occ2: {path2}")
+                except:
+                    pass
             self.log(f"--- TOTAL JOINTS FOUND: {len(self.all_joints)} ---")
         except:
             pass # Fail safe
@@ -360,10 +361,13 @@ class Exporter:
         # Create body element
         clean_name = self.clean_name(occ.name)
         
-        # 1. Get Current World Transform
+        # 1. Get World Transform
+        # When traversing the hierarchy via childOccurrences starting from root, 
+        # Fusion returns the transform relative to the assembly context (Root).
         current_world_transform = occ.transform
         
         # 2. Calculate Relative Transform (Parent -> Child)
+        # MuJoCo expects the position relative to the parent body frame.
         parent_inv = parent_world_transform.copy()
         parent_inv.invert()
         rel_transform = parent_inv.copy()
@@ -542,42 +546,29 @@ class Exporter:
         else:
             return # Rigid, Ball, etc. not handled yet
             
-        # Strategy: Use the PARENT side of the joint to find the anchor point.
-        # Why? The Parent side geometry is defined in the Grandparent's coordinate space.
-        # For a top-level assembly, Grandparent is Root (World), which is reliable.
+        # Strategy: Use World-to-World transformation.
+        # Since we are using joint proxies from the root component,
+        # both child_occ.transform and geom.origin are in the World (Root) context.
+        # MuJoCo expects the joint position relative to the child body frame.
         
         is_child_occ_one = (joint.occurrenceOne == child_occ)
+        geom = joint.geometryOrOriginOne if is_child_occ_one else joint.geometryOrOriginTwo
         
-        # If Child is Occ1, Parent is Occ2. Use Geom2.
-        # If Child is Occ2, Parent is Occ1. Use Geom1.
-        parent_geom = joint.geometryOrOriginTwo if is_child_occ_one else joint.geometryOrOriginOne
-        
-        # Parent Geom is in Grandparent Space.
-        # 1. Get Grandparent -> World
-        parent_occ = self.get_parent_occurrence(child_occ)
-        grandparent_occ = self.get_parent_occurrence(parent_occ) if parent_occ else None
-        
-        if grandparent_occ:
-            grandparent_to_world = grandparent_occ.transform
-        else:
-            grandparent_to_world = adsk.core.Matrix3D.create() # Identity (Root)
+        # 1. Get Child World Transform
+        child_world = child_occ.transform
+        child_world_inv = child_world.copy()
+        child_world_inv.invert()
 
-        # 2. Get World -> Child Transform
-        world_to_child = child_occ.transform.copy()
-        world_to_child.invert()
-        
-        # 3. Transform Origin: Grandparent -> World -> Child
-        origin = parent_geom.origin.copy()
-        origin.transformBy(grandparent_to_world)
-        origin.transformBy(world_to_child)
+        # 2. Transform Origin: World -> Child Local
+        origin = geom.origin.copy()
+        origin.transformBy(child_world_inv)
         
         s = self.length_scale
         pos_str = f"{origin.x * s} {origin.y * s} {origin.z * s}"
         
-        # 4. Transform Axis: Same Logic
-        axis_vec = parent_geom.primaryAxisVector.copy()
-        axis_vec.transformBy(grandparent_to_world)
-        axis_vec.transformBy(world_to_child)
+        # 3. Transform Axis: World -> Child Local
+        axis_vec = geom.primaryAxisVector.copy()
+        axis_vec.transformBy(child_world_inv)
         axis_str = f"{axis_vec.x} {axis_vec.y} {axis_vec.z}"
         
         # DEBUG: Check Bounding Box vs Joint Pos
@@ -591,12 +582,12 @@ class Exporter:
             
             # Transform Local Pos back to World for comparison?
             check_pt = origin.copy()
-            check_pt.transformBy(child_occ.transform) # Local -> World
+            check_pt.transformBy(child_world) # Local -> World
             self.log(f"    Calc World Pos (scaled): {check_pt.x*s:.3f} {check_pt.y*s:.3f} {check_pt.z*s:.3f}")
         except:
             pass
             
-        # 5. Limits
+        # 4. Limits
         extra_attrs = {}
         if mj_type == "hinge":
             rev_motion = adsk.fusion.RevoluteJointMotion.cast(motion)
