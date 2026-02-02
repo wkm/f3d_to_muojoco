@@ -1,6 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <mujoco model="Simple2Wheel">
   <compiler angle="radian" meshdir="meshes" />
+  <default>
+    <velocity kv="10" ctrlrange="-1 1" />
+  </default>
   <visual>
     <headlight ambient=".4 .4 .4" diffuse=".8 .8 .8" specular="0.1 0.1 0.1" />
     <map znear="0.01" />
@@ -31,4 +34,14 @@
       </body>
     </body>
   </worldbody>
+  <actuator>
+    <velocity name="Revolute_1_vel" joint="Revolute_1" ctrlrange="-1 1" />
+    <velocity name="Revolute_2_vel" joint="Revolute_2" ctrlrange="-1 1" />
+  </actuator>
+  <sensor>
+    <jointpos name="Revolute_1_pos_sensor" joint="Revolute_1" />
+    <jointvel name="Revolute_1_vel_sensor" joint="Revolute_1" />
+    <jointpos name="Revolute_2_pos_sensor" joint="Revolute_2" />
+    <jointvel name="Revolute_2_vel_sensor" joint="Revolute_2" />
+  </sensor>
 </mujoco>

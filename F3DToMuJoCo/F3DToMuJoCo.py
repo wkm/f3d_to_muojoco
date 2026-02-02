@@ -781,11 +781,14 @@ class Exporter:
 
         # Set defaults based on actuator type
         if self.actuator_type == "position":
-            # PD control defaults
+            # PD control defaults (normalized control signal)
             ET.SubElement(default_elem, "position", {"kp": "100", "ctrlrange": "-1 1"})
         elif self.actuator_type == "velocity":
-            # Velocity control defaults
-            ET.SubElement(default_elem, "velocity", {"kv": "10", "ctrlrange": "-1 1"})
+            # Velocity control defaults (control signal is desired velocity in rad/s or units/s)
+            # Using reasonable velocity range for wheels/joints: ±20 rad/s (~3.2 rev/s)
+            ET.SubElement(
+                default_elem, "velocity", {"kv": "100", "ctrlrange": "-20 20"}
+            )
         elif self.actuator_type == "motor":
             # Motor (torque/force) control defaults
             ET.SubElement(default_elem, "motor", {"ctrlrange": "-1 1", "gear": "1"})
@@ -817,12 +820,23 @@ class Exporter:
             # Base attributes
             attrs = {"name": actuator_name, "joint": joint_name}
 
-            # Set control range
-            if has_limits and limits:
-                # Use joint limits for control range
-                attrs["ctrlrange"] = limits
-            else:
-                # Use default range
+            # Set control range based on actuator type and joint limits
+            if self.actuator_type == "position":
+                # Position actuators: use joint limits if available, else normalized range
+                if has_limits and limits:
+                    attrs["ctrlrange"] = limits
+                else:
+                    attrs["ctrlrange"] = "-1 1"
+            elif self.actuator_type == "velocity":
+                # Velocity actuators: control signal is desired velocity (rad/s or units/s)
+                # Use reasonable velocity range (±20 rad/s for rotational, ±10 units/s for linear)
+                if has_limits and limits:
+                    # Could derive velocity from position limits, but just use default for now
+                    attrs["ctrlrange"] = "-20 20"
+                else:
+                    attrs["ctrlrange"] = "-20 20"
+            else:  # motor
+                # Motor actuators: use normalized range
                 attrs["ctrlrange"] = "-1 1"
 
             # Add appropriate actuator type
