@@ -33,7 +33,9 @@ class Exporter:
         # We must scale API values to match the Document Units.
         units_mgr = self.design.unitsManager
         self.length_scale = units_mgr.convert(1, units_mgr.internalUnits, units_mgr.defaultLengthUnits)
-        
+
+        # Initialize joints list before collecting (prevents crash if collection fails)
+        self.all_joints = []
         self._collect_all_joints()
 
     def _collect_all_joints(self):
@@ -213,6 +215,22 @@ class Exporter:
     def clean_name(self, name):
         return name.replace(':', '_').replace(' ', '_')
 
+    def format_vec3(self, x, y, z, decimals=6):
+        """Format a 3D vector with specified decimal precision."""
+        return f"{x:.{decimals}f} {y:.{decimals}f} {z:.{decimals}f}"
+
+    def format_quat(self, w, x, y, z, decimals=6):
+        """Format a quaternion with specified decimal precision."""
+        return f"{w:.{decimals}f} {x:.{decimals}f} {y:.{decimals}f} {z:.{decimals}f}"
+
+    def format_inertia(self, ixx, iyy, izz, ixy, ixz, iyz, decimals=6):
+        """Format a full inertia tensor with specified decimal precision."""
+        return f"{ixx:.{decimals}f} {iyy:.{decimals}f} {izz:.{decimals}f} {ixy:.{decimals}f} {ixz:.{decimals}f} {iyz:.{decimals}f}"
+
+    def format_range(self, min_val, max_val, decimals=6):
+        """Format a range (min, max) with specified decimal precision."""
+        return f"{min_val:.{decimals}f} {max_val:.{decimals}f}"
+
     def matrix_to_quat(self, matrix):
         # Converts Fusion 360 Matrix3D to Quaternion [w, x, y, z]
         # Based on standard conversion algorithms
@@ -262,8 +280,8 @@ class Exporter:
             qx = (m02 + m20) / S
             qy = (m12 + m21) / S
             qz = 0.25 * S
-        
-        return f"{qw} {qx} {qy} {qz}"
+
+        return self.format_quat(qw, qx, qy, qz)
 
     def build_xml(self):
         root_elem = ET.Element('mujoco', {'model': self.root_comp.name})
@@ -377,7 +395,7 @@ class Exporter:
         trans = rel_transform.translation
         # Scale to match Document Units (e.g., cm -> mm)
         s = self.length_scale
-        pos_str = f"{trans.x * s} {trans.y * s} {trans.z * s}" 
+        pos_str = self.format_vec3(trans.x * s, trans.y * s, trans.z * s)
         quat_str = self.matrix_to_quat(rel_transform)
         
         body = ET.SubElement(parent_xml_elem, 'body', {'name': clean_name, 'pos': pos_str, 'quat': quat_str})
@@ -469,16 +487,16 @@ class Exporter:
             # props.centerOfMass is relative to the Component's Coordinate System (Local)
             com = props.centerOfMass
             s = self.length_scale
-            com_str = f"{com.x * s} {com.y * s} {com.z * s}"
-            
+            com_str = self.format_vec3(com.x * s, com.y * s, com.z * s)
+
             # Moments of Inertia
             # Fusion units are internal (cm, kg).
             # Inertia scales with length squared.
             s2 = s * s
-            
+
             (Ixx, Iyy, Izz, Ixy, Iyz, Ixz) = props.getMomentsOfInertia()
-            
-            full_inertia = f"{Ixx*s2} {Iyy*s2} {Izz*s2} {Ixy*s2} {Ixz*s2} {Iyz*s2}"
+
+            full_inertia = self.format_inertia(Ixx*s2, Iyy*s2, Izz*s2, Ixy*s2, Ixz*s2, Iyz*s2)
             
             ET.SubElement(body_elem, 'inertial', {
                 'pos': com_str,
@@ -564,12 +582,20 @@ class Exporter:
         origin.transformBy(child_world_inv)
         
         s = self.length_scale
-        pos_str = f"{origin.x * s} {origin.y * s} {origin.z * s}"
-        
+        pos_str = self.format_vec3(origin.x * s, origin.y * s, origin.z * s)
+
         # 3. Transform Axis: World -> Child Local
         axis_vec = geom.primaryAxisVector.copy()
         axis_vec.transformBy(child_world_inv)
-        axis_str = f"{axis_vec.x} {axis_vec.y} {axis_vec.z}"
+
+        # Normalize axis to ensure it's unit-length (required by MuJoCo)
+        axis_mag = math.sqrt(axis_vec.x**2 + axis_vec.y**2 + axis_vec.z**2)
+        if axis_mag > 0:
+            axis_vec.x /= axis_mag
+            axis_vec.y /= axis_mag
+            axis_vec.z /= axis_mag
+
+        axis_str = self.format_vec3(axis_vec.x, axis_vec.y, axis_vec.z)
         
         # DEBUG: Check Bounding Box vs Joint Pos
         try:
@@ -594,13 +620,13 @@ class Exporter:
             limits = rev_motion.rotationLimits
             if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
                 # Fusion is radians? Yes, internal units for angles are radians.
-                extra_attrs['range'] = f"{limits.minimumValue} {limits.maximumValue}"
+                extra_attrs['range'] = self.format_range(limits.minimumValue, limits.maximumValue)
         elif mj_type == "slide":
             slide_motion = adsk.fusion.SliderJointMotion.cast(motion)
             limits = slide_motion.slideLimits
             if limits.isMinimumValueEnabled and limits.isMaximumValueEnabled:
                 # Slide limits are in cm, scale to document units
-                extra_attrs['range'] = f"{limits.minimumValue * s} {limits.maximumValue * s}"
+                extra_attrs['range'] = self.format_range(limits.minimumValue * s, limits.maximumValue * s)
         
         ET.SubElement(body_elem, 'joint', {
             'name': self.clean_name(joint.name),
@@ -615,7 +641,7 @@ class Exporter:
             ET.SubElement(body_elem, 'geom', {
                 'name': f"debug_joint_{self.clean_name(joint.name)}",
                 'type': 'sphere',
-                'size': f"{5.0 * s}", # Scale debug sphere too
+                'size': f"{5.0 * s:.6f}",  # Scale debug sphere too
                 'rgba': '1 0 0 1',
                 'pos': pos_str
             })

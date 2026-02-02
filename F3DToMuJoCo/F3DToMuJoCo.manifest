@@ -8,7 +8,7 @@
 	"supportedOS":	"windows|mac",
 	"editEnabled":	true,
 	"id":	"49fdb8f2-b8e7-4925-94c6-47da85a4f65a",
-	"version":	"0.1.0",
+	"version":	"0.1.5",
 	"runOnStartup":	false,
 	"name":	"F3DToMuJoCo"
 }
