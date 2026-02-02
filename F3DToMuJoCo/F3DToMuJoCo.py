@@ -69,11 +69,16 @@ class Exporter:
         # Calculate Unit Scale Factor
         # Fusion API always returns Centimeters.
         # STLs are exported in Document Units (e.g., mm, in, m).
-        # We must scale API values to match the Document Units.
+        # MuJoCo expects Meters for everything in the XML (pos, mass, inertia).
         units_mgr = self.design.unitsManager
-        self.length_scale = units_mgr.convert(
-            1, units_mgr.internalUnits, units_mgr.defaultLengthUnits
-        )
+        
+        # 1. Scale factor for XML values (Internal cm -> Meters)
+        # API returns cm, we want m. 1 cm = 0.01 m.
+        self.length_scale = units_mgr.convert(1, units_mgr.internalUnits, "m")
+        
+        # 2. Scale factor for Meshes (Document Units -> Meters)
+        doc_units = units_mgr.defaultLengthUnits
+        self.mesh_scale_factor = units_mgr.convert(1, doc_units, "m")
 
         # Initialize joints list before collecting (prevents crash if collection fails)
         self.all_joints = []
@@ -404,7 +409,8 @@ class Exporter:
 
     def format_inertia(self, ixx, iyy, izz, ixy, ixz, iyz, decimals=6):
         """Format a full inertia tensor with specified decimal precision."""
-        return f"{ixx:.{decimals}f} {iyy:.{decimals}f} {izz:.{decimals}f} {ixy:.{decimals}f} {ixz:.{decimals}f} {iyz:.{decimals}f}"
+        # Use scientific notation for inertia as values can be very small (scaling with Length^2)
+        return f"{ixx:.{decimals}e} {iyy:.{decimals}e} {izz:.{decimals}e} {ixy:.{decimals}e} {ixz:.{decimals}e} {iyz:.{decimals}e}"
 
     def format_range(self, min_val, max_val, decimals=6):
         """Format a range (min, max) with specified decimal precision."""
@@ -477,7 +483,11 @@ class Exporter:
         root_elem = ET.Element("mujoco", {"model": model_name})
 
         # Add basic compiler and asset settings
-        ET.SubElement(root_elem, "compiler", {"angle": "radian", "meshdir": "meshes"})
+        ET.SubElement(
+            root_elem, 
+            "compiler", 
+            {"angle": "radian", "meshdir": "meshes"}
+        )
 
         # Add default section (if actuators enabled)
         if self.enable_actuators:
@@ -497,9 +507,10 @@ class Exporter:
                 body = comp.bRepBodies.item(i)
                 clean_body_name = self.clean_name(body.name)
                 mesh_name = f"{clean_comp_name}_{clean_body_name}"
+                mesh_scale_str = f"{self.mesh_scale_factor:.6f} {self.mesh_scale_factor:.6f} {self.mesh_scale_factor:.6f}"
 
                 ET.SubElement(
-                    asset, "mesh", {"name": mesh_name, "file": f"{mesh_name}.stl"}
+                    asset, "mesh", {"name": mesh_name, "file": f"{mesh_name}.stl", "scale": mesh_scale_str}
                 )
 
         # Worldbody with robot hierarchy

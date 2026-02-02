@@ -4,7 +4,7 @@
 export:
   document: Simple2Wheel
   units: mm
-  length_scale: 10.0
+  length_scale: 0.01
 
 files:
   scene: scene.xml
@@ -28,20 +28,20 @@ model:
     - name: "body:1"
       full_path: "body:1"
       world_position: [0.000000, 0.000000, 0.000000]
-      bounding_box_min: [-215.020000, -0.020000, -125.010000]
-      bounding_box_max: [115.020000, 150.020000, 125.010000]
+      bounding_box_min: [-0.215020, -0.000020, -0.125010]
+      bounding_box_max: [0.115020, 0.150020, 0.125010]
       body_count: 1
     - name: "l_wheel:1"
       full_path: "body:1+l_wheel:1"
       world_position: [0.000000, 0.000000, 0.000000]
-      bounding_box_min: [74.990000, -0.010000, -75.010000]
-      bounding_box_max: [115.010000, 150.010000, 75.010000]
+      bounding_box_min: [0.074990, -0.000010, -0.075010]
+      bounding_box_max: [0.115010, 0.150010, 0.075010]
       body_count: 1
     - name: "r_wheel:1"
       full_path: "body:1+r_wheel:1"
       world_position: [0.000000, 0.000000, 0.000000]
-      bounding_box_min: [-215.010000, -0.010000, -75.010000]
-      bounding_box_max: [-174.990000, 150.010000, 75.010000]
+      bounding_box_min: [-0.215010, -0.000010, -0.075010]
+      bounding_box_max: [-0.174990, 0.150010, 0.075010]
       body_count: 1
 
 components:
@@ -77,13 +77,13 @@ joints:
     type: hinge
     parent: body_1
     child: l_wheel_1
-    position: [75.000000 75.000000 0.000000]
+    position: [0.075000 0.075000 0.000000]
     axis: [-1.000000 0.000000 0.000000]
   - name: Revolute_2
     type: hinge
     parent: body_1
     child: r_wheel_1
-    position: [-175.000000 75.000000 0.000000]
+    position: [-0.175000 0.075000 0.000000]
     axis: [1.000000 0.000000 0.000000]
 
 actuators:
@@ -117,9 +117,9 @@ joint_processing:
     occurrence_one: "l_wheel:1"
     occurrence_two: "body:1"
     attached_to: "l_wheel:1"
-    world_origin: [75.000000, 75.000000, 0.000000]
+    world_origin: [0.075000, 0.075000, 0.000000]
     world_axis: [-1.000000, 0.000000, 0.000000]
-    local_origin: [75.000000, 75.000000, 0.000000]
+    local_origin: [0.075000, 0.075000, 0.000000]
     local_axis: [-1.000000, 0.000000, 0.000000]
   - joint: Revolute_2
     fusion_type: Revolute
@@ -127,9 +127,9 @@ joint_processing:
     occurrence_one: "r_wheel:1"
     occurrence_two: "body:1"
     attached_to: "r_wheel:1"
-    world_origin: [-175.000000, 75.000000, 0.000000]
+    world_origin: [-0.175000, 0.075000, 0.000000]
     world_axis: [1.000000, 0.000000, 0.000000]
-    local_origin: [-175.000000, 75.000000, 0.000000]
+    local_origin: [-0.175000, 0.075000, 0.000000]
     local_axis: [1.000000, 0.000000, 0.000000]
 
 appearance_extraction:

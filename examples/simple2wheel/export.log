@@ -1,4 +1,4 @@
-[F3DToMuJoCo] Initializing exporter (document units: mm, scale factor: 10.000000)
+[F3DToMuJoCo] Initializing exporter (document units: mm, scale factor: 0.010000)
 [F3DToMuJoCo] Collecting joints from assembly...
 [F3DToMuJoCo]   Joint 'Revolute 1' (Revolute): body:1+l_wheel:1 <-> body:1
 [F3DToMuJoCo]   Joint 'Revolute 2' (Revolute): body:1+r_wheel:1 <-> body:1
@@ -14,15 +14,15 @@
 [F3DToMuJoCo]   Processing joint 'Revolute 1' (Revolute -> hinge):
 [F3DToMuJoCo]     Connects: l_wheel:1 <-> body:1
 [F3DToMuJoCo]     Attached to: l_wheel:1
-[F3DToMuJoCo]     World origin: (75.0, 75.0, 0.0)
-[F3DToMuJoCo]     Local origin: (75.0, 75.0, 0.0)
+[F3DToMuJoCo]     World origin: (0.1, 0.1, 0.0)
+[F3DToMuJoCo]     Local origin: (0.1, 0.1, 0.0)
 [F3DToMuJoCo]     Local axis: (-1.000, 0.000, 0.000)
 [F3DToMuJoCo] No physical material on r_wheel, using estimated inertial properties
 [F3DToMuJoCo]   Processing joint 'Revolute 2' (Revolute -> hinge):
 [F3DToMuJoCo]     Connects: r_wheel:1 <-> body:1
 [F3DToMuJoCo]     Attached to: r_wheel:1
-[F3DToMuJoCo]     World origin: (-175.0, 75.0, 0.0)
-[F3DToMuJoCo]     Local origin: (-175.0, 75.0, 0.0)
+[F3DToMuJoCo]     World origin: (-0.2, 0.1, 0.0)
+[F3DToMuJoCo]     Local origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local axis: (1.000, 0.000, 0.000)
 [F3DToMuJoCo] Generated 2 motor actuator(s)
 [F3DToMuJoCo] Generated 4 sensor(s) (2 position + 2 velocity)
