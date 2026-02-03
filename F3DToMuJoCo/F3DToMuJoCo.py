@@ -535,6 +535,9 @@ class Exporter:
                 occ, root_adapter, identity_transform, self.root_comp
             )
 
+        # Add contacts (exclusions)
+        self._add_contacts(root_elem)
+
         # Add actuators and sensors
         if self.enable_actuators:
             self._add_actuators(root_elem)
@@ -684,7 +687,7 @@ class Exporter:
         self.process_inertial(occ.component, body, clean_name)
 
         # 5. Add Joints
-        self.process_joints(occ, body, parent_context)
+        self.process_joints(occ, body, parent_context, parent_name)
 
         # 6. Add Geometry (Visual)
         # Add a geom for EACH body in the component
@@ -951,7 +954,7 @@ class Exporter:
         except Exception:
             return "UNKNOWN"
 
-    def process_joints(self, occ, body_elem, target_parent):
+    def process_joints(self, occ, body_elem, target_parent, parent_body_name="world"):
         # Look for a joint that connects 'occ' to 'target_parent'
         target_name = (
             target_parent.fullPathName
@@ -986,14 +989,14 @@ class Exporter:
             )
 
             if match:
-                self.add_joint_to_xml(joint, occ, body_elem)
+                self.add_joint_to_xml(joint, occ, body_elem, parent_body_name)
                 found_joint = True
                 break
 
         if not found_joint:
             self.log(f"  No joint found for '{occ.name}' (rigidly attached to {target_name})")
 
-    def add_joint_to_xml(self, joint, child_occ, body_elem):
+    def add_joint_to_xml(self, joint, child_occ, body_elem, parent_body_name):
         motion = joint.jointMotion
 
         mj_type = ""
@@ -1106,13 +1109,15 @@ class Exporter:
             },
         )
 
-        # Track exported joint for actuator/sensor generation
+        # Track exported joint for actuator/sensor generation AND contact exclusion
         self.exported_joints.append(
             {
                 "name": joint_name,
                 "mj_type": mj_type,  # 'hinge' or 'slide'
                 "has_limits": len(extra_attrs) > 0,
                 "limits": extra_attrs.get("range", None),
+                "parent_body": parent_body_name,
+                "child_body": self.clean_name(child_occ.name),
             }
         )
 
@@ -1148,6 +1153,38 @@ class Exporter:
                     "pos": pos_str,
                 },
             )
+
+    def _add_contacts(self, root_elem):
+        """Add contact exclusions for joint-connected bodies."""
+        if not self.exported_joints:
+            return
+
+        # Insert after worldbody, before actuator/sensor
+        # Standard MJCF order: worldbody, contact, actuator, sensor
+        insert_idx = -1
+        for i, child in enumerate(root_elem):
+            if child.tag == "worldbody":
+                insert_idx = i + 1
+                break
+        
+        if insert_idx == -1:
+            insert_idx = len(root_elem) # Append to end if worldbody not found (unlikely)
+
+        contact_elem = ET.Element("contact")
+        
+        added_any = False
+        for joint_info in self.exported_joints:
+            p = joint_info.get("parent_body")
+            c = joint_info.get("child_body")
+            
+            # If we have valid parent/child body names, exclude them
+            if p and c and p != "world" and p != "worldbody":
+                ET.SubElement(contact_elem, "exclude", {"body1": p, "body2": c})
+                added_any = True
+        
+        if added_any:
+            root_elem.insert(insert_idx, contact_elem)
+            self.log(f"Generated {len(contact_elem)} contact exclusion(s) to prevent self-collision")
 
     def _add_default_section(self, root_elem):
         """Add MuJoCo default section with actuator parameters."""
