@@ -24,6 +24,7 @@
 [F3DToMuJoCo]     World origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local axis: (1.000, 0.000, 0.000)
+[F3DToMuJoCo] Generated 2 contact exclusion(s) to prevent self-collision
 [F3DToMuJoCo] Generated 2 motor actuator(s)
 [F3DToMuJoCo] Generated 4 sensor(s) (2 position + 2 velocity)
 [F3DToMuJoCo] Saved robot model to bot.xml
