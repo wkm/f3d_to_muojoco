@@ -529,6 +529,10 @@ class Exporter:
             {"name": "base", "pos": "0 0 0", "euler": f"{root_rot} 0 0"},
         )
 
+        # Add freejoint to allow the robot to move freely in the world
+        # Without this, the robot is fixed to the world and unaffected by gravity
+        ET.SubElement(root_adapter, "freejoint", {"name": "root"})
+
         # Recursively process occurrences, attaching them to the ADAPTER
         for occ in self.root_comp.occurrences:
             self.process_occurrence(

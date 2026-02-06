@@ -3,10 +3,11 @@
 [F3DToMuJoCo]   Joint 'Revolute 1' (Revolute): body:1+l_wheel:1 <-> body:1
 [F3DToMuJoCo]   Joint 'Revolute 2' (Revolute): body:1+r_wheel:1 <-> body:1
 [F3DToMuJoCo] Found 2 joint(s) in assembly
-[F3DToMuJoCo] Model: Simple2Wheel (4 components, 3 bodies, 2 joints)
+[F3DToMuJoCo] Model: Simple2Wheel (5 components, 4 bodies, 2 joints)
 [F3DToMuJoCo]   Occurrence 'body:1': pos=(0.0, 0.0, 0.0), 1 bodies
 [F3DToMuJoCo]   Occurrence 'l_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
 [F3DToMuJoCo]   Occurrence 'r_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
+[F3DToMuJoCo]   Occurrence 'camera:1': pos=(0.0, 0.0, 0.0), 1 bodies
 [F3DToMuJoCo] Beginning export to /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel
 [F3DToMuJoCo] No physical material on body, using estimated inertial properties
 [F3DToMuJoCo]   No joint found for 'body:1' (rigidly attached to Root)
@@ -24,6 +25,8 @@
 [F3DToMuJoCo]     World origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local axis: (1.000, 0.000, 0.000)
+[F3DToMuJoCo] No physical material on camera, using estimated inertial properties
+[F3DToMuJoCo]   No joint found for 'camera:1' (rigidly attached to Root)
 [F3DToMuJoCo] Generated 2 contact exclusion(s) to prevent self-collision
 [F3DToMuJoCo] Generated 2 motor actuator(s)
 [F3DToMuJoCo] Generated 4 sensor(s) (2 position + 2 velocity)
