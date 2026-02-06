@@ -26,13 +26,23 @@ class Exporter:
         enable_actuators=True,
         actuator_type="position",
         enable_sensors=True,
+        enable_cameras=True,
+        camera_name_prefix="camera",
+        camera_fovy=45,
+        camera_forward_axis="+Z",
     ):
         self.export_path = export_path
         self.debug_mode = debug_mode
         self.enable_actuators = enable_actuators
         self.actuator_type = actuator_type  # 'position', 'velocity', 'motor'
         self.enable_sensors = enable_sensors
+        self.enable_cameras = enable_cameras
+        self.camera_name_prefix = camera_name_prefix
+        self.camera_fovy = camera_fovy
+        self.camera_forward_axis = camera_forward_axis
         self.exported_joints = []  # Track joints for actuator/sensor generation
+        self.exported_cameras = []  # Track cameras for manifest
+        self.camera_body_attachments = []  # Track camera-parent pairs for contact exclusion
 
         # Initialize log file
         self.log_file = None
@@ -52,6 +62,7 @@ class Exporter:
             "joints": [],
             "actuators": [],
             "sensors": [],
+            "cameras": [],
             "warnings": [],
             "joint_processing": [],
             "appearance_extraction": [],
@@ -270,6 +281,16 @@ class Exporter:
 
             if not has_valid_material:
                 missing_materials.append(comp.name)
+
+        # Check for camera bodies (informational)
+        if self.enable_cameras:
+            camera_bodies = []
+            for comp in self.design.allComponents:
+                clean = self.clean_name(comp.name)
+                if self._is_camera_body(clean):
+                    camera_bodies.append(comp.name)
+            if camera_bodies:
+                self.log(f"Detected {len(camera_bodies)} camera component(s): {', '.join(camera_bodies)}")
 
         # Construct Warning Message and track in manifest
         msg = ""
@@ -533,11 +554,53 @@ class Exporter:
         # Without this, the robot is fixed to the world and unaffected by gravity
         ET.SubElement(root_adapter, "freejoint", {"name": "root"})
 
-        # Recursively process occurrences, attaching them to the ADAPTER
+        # Two-pass processing: main bodies first, then cameras.
+        # Camera bodies are attached to the primary body (first non-camera root
+        # occurrence) so they move with the robot instead of floating as siblings.
+        primary_body_elem = None
+        primary_body_world_transform = identity_transform
+        primary_body_occ = None
+        camera_occurrences = []
+
         for occ in self.root_comp.occurrences:
-            self.process_occurrence(
-                occ, root_adapter, identity_transform, self.root_comp
-            )
+            clean_name = self.clean_name(occ.name)
+            if self.enable_cameras and self._is_camera_body(clean_name):
+                camera_occurrences.append(occ)
+            else:
+                self.process_occurrence(
+                    occ, root_adapter, identity_transform, self.root_comp
+                )
+                if primary_body_elem is None:
+                    for child in root_adapter:
+                        if child.tag == "body" and child.get("name") == clean_name:
+                            primary_body_elem = child
+                            primary_body_world_transform = occ.transform
+                            primary_body_occ = occ
+                            break
+
+        # Attach camera bodies to the primary body so they're part of the robot
+        if camera_occurrences:
+            if primary_body_elem is not None:
+                cam_parent = primary_body_elem
+                cam_parent_transform = primary_body_world_transform
+                cam_parent_context = primary_body_occ
+                self.log(f"Attaching {len(camera_occurrences)} camera(s) to body '{primary_body_elem.get('name')}'")
+            else:
+                cam_parent = root_adapter
+                cam_parent_transform = identity_transform
+                cam_parent_context = self.root_comp
+                self.log("No primary body found, attaching cameras to root adapter")
+
+            for occ in camera_occurrences:
+                self.process_occurrence(
+                    occ, cam_parent, cam_parent_transform, cam_parent_context
+                )
+                # Track for contact exclusion
+                if primary_body_elem is not None:
+                    self.camera_body_attachments.append({
+                        "camera_body": self.clean_name(occ.name),
+                        "parent_body": primary_body_elem.get("name"),
+                    })
 
         # Add contacts (exclusions)
         self._add_contacts(root_elem)
@@ -717,6 +780,10 @@ class Exporter:
                     "color": rgba_str,
                 }
             )
+
+        # 7. Add Camera (if this is a camera body)
+        if self.enable_cameras and self._is_camera_body(clean_name):
+            self._add_camera_to_body(body, clean_name, occ)
 
         # Process children
         for child_occ in occ.childOccurrences:
@@ -1159,8 +1226,8 @@ class Exporter:
             )
 
     def _add_contacts(self, root_elem):
-        """Add contact exclusions for joint-connected bodies."""
-        if not self.exported_joints:
+        """Add contact exclusions for joint-connected bodies and camera attachments."""
+        if not self.exported_joints and not self.camera_body_attachments:
             return
 
         # Insert after worldbody, before actuator/sensor
@@ -1170,22 +1237,29 @@ class Exporter:
             if child.tag == "worldbody":
                 insert_idx = i + 1
                 break
-        
+
         if insert_idx == -1:
-            insert_idx = len(root_elem) # Append to end if worldbody not found (unlikely)
+            insert_idx = len(root_elem)
 
         contact_elem = ET.Element("contact")
-        
+
         added_any = False
         for joint_info in self.exported_joints:
             p = joint_info.get("parent_body")
             c = joint_info.get("child_body")
-            
-            # If we have valid parent/child body names, exclude them
+
             if p and c and p != "world" and p != "worldbody":
                 ET.SubElement(contact_elem, "exclude", {"body1": p, "body2": c})
                 added_any = True
-        
+
+        # Exclude camera-parent body collisions
+        for cam_attach in self.camera_body_attachments:
+            p = cam_attach.get("parent_body")
+            c = cam_attach.get("camera_body")
+            if p and c:
+                ET.SubElement(contact_elem, "exclude", {"body1": p, "body2": c})
+                added_any = True
+
         if added_any:
             root_elem.insert(insert_idx, contact_elem)
             self.log(f"Generated {len(contact_elem)} contact exclusion(s) to prevent self-collision")
@@ -1316,6 +1390,93 @@ class Exporter:
             f"Generated {len(self.exported_joints) * 2} sensor(s) ({len(self.exported_joints)} position + {len(self.exported_joints)} velocity)"
         )
 
+    def _is_camera_body(self, clean_name):
+        """Check if a body name matches the camera naming convention."""
+        return clean_name.lower().startswith(self.camera_name_prefix.lower())
+
+    def _camera_forward_euler(self):
+        """Compute euler rotation to align the chosen forward axis with MuJoCo camera's -Z convention.
+
+        The forward axis describes a direction in the Fusion coordinate system (Y-up).
+        Since the camera body sits inside the base adapter (which rotates Y-up → Z-up),
+        the body frame IS the Fusion frame. MuJoCo cameras look along their local -Z.
+        """
+        axis_to_euler = {
+            "-Z": "0 0 0",           # Forward in Fusion (into screen)
+            "+Z": f"0 {math.pi} 0",  # Backward in Fusion
+            "+Y": f"{math.pi / 2} 0 0",  # Up in Fusion
+            "-Y": f"{-math.pi / 2} 0 0", # Down in Fusion
+            "-X": f"0 {-math.pi / 2} 0", # Left in Fusion
+            "+X": f"0 {math.pi / 2} 0",  # Right in Fusion
+        }
+        return axis_to_euler.get(self.camera_forward_axis, f"0 {math.pi} 0")
+
+    def _add_camera_to_body(self, body_elem, clean_name, occ):
+        """Add a <camera> element inside a body for camera-named components."""
+        camera_name = f"{clean_name}_cam"
+        euler_str = self._camera_forward_euler()
+        s = self.length_scale
+
+        # Compute camera position from the component's geometry, offset to the
+        # front face of the bounding box along the forward axis so the camera
+        # sensor sits just in front of the mesh rather than inside it.
+        pos_str = "0 0 0"
+        pos_values = [0, 0, 0]
+        forward_vectors = {
+            "-Z": (0, 0, -1), "+Z": (0, 0, 1),
+            "-Y": (0, -1, 0), "+Y": (0, 1, 0),
+            "-X": (-1, 0, 0), "+X": (1, 0, 0),
+        }
+        fwd = forward_vectors.get(self.camera_forward_axis, (0, 0, -1))
+        try:
+            comp = occ.component
+            if comp.bRepBodies.count > 0:
+                bb = comp.bRepBodies.item(0).boundingBox
+                # Start at bounding box center
+                cx = (bb.minPoint.x + bb.maxPoint.x) / 2.0 * s
+                cy = (bb.minPoint.y + bb.maxPoint.y) / 2.0 * s
+                cz = (bb.minPoint.z + bb.maxPoint.z) / 2.0 * s
+                # Offset to the front face along the forward axis
+                half_dx = (bb.maxPoint.x - bb.minPoint.x) / 2.0 * s
+                half_dy = (bb.maxPoint.y - bb.minPoint.y) / 2.0 * s
+                half_dz = (bb.maxPoint.z - bb.minPoint.z) / 2.0 * s
+                cx += fwd[0] * half_dx
+                cy += fwd[1] * half_dy
+                cz += fwd[2] * half_dz
+                pos_values = [cx, cy, cz]
+                pos_str = self.format_vec3(cx, cy, cz)
+                self.log(f"  Camera '{camera_name}' position (front face): ({cx:.4f}, {cy:.4f}, {cz:.4f})")
+                self.log(f"    BBox min: ({bb.minPoint.x * s:.4f}, {bb.minPoint.y * s:.4f}, {bb.minPoint.z * s:.4f})")
+                self.log(f"    BBox max: ({bb.maxPoint.x * s:.4f}, {bb.maxPoint.y * s:.4f}, {bb.maxPoint.z * s:.4f})")
+                self.log(f"    Forward axis: {self.camera_forward_axis} → offset ({fwd[0]}, {fwd[1]}, {fwd[2]})")
+        except Exception as e:
+            self.log(f"  Warning: Could not compute camera position from geometry: {e}")
+
+        ET.SubElement(
+            body_elem,
+            "camera",
+            {
+                "name": camera_name,
+                "fovy": str(self.camera_fovy),
+                "pos": pos_str,
+                "euler": euler_str,
+            },
+        )
+
+        # Track exported camera
+        camera_info = {
+            "name": camera_name,
+            "body": clean_name,
+            "fovy": self.camera_fovy,
+            "forward_axis": self.camera_forward_axis,
+            "euler": euler_str,
+            "pos": pos_values,
+        }
+        self.exported_cameras.append(camera_info)
+        self.manifest["cameras"].append(camera_info)
+
+        self.log(f"  Added camera '{camera_name}' (pos={pos_str}, fovy={self.camera_fovy}, forward={self.camera_forward_axis}, euler={euler_str})")
+
     def save_manifest(self):
         """Generate and save YAML manifest with export metadata."""
         # Populate export metadata (no timestamp to avoid diffs)
@@ -1333,6 +1494,10 @@ class Exporter:
             "actuators_enabled": self.enable_actuators,
             "actuator_type": self.actuator_type if self.enable_actuators else None,
             "sensors_enabled": self.enable_sensors,
+            "cameras_enabled": self.enable_cameras,
+            "camera_name_prefix": self.camera_name_prefix if self.enable_cameras else None,
+            "camera_fovy": self.camera_fovy if self.enable_cameras else None,
+            "camera_forward_axis": self.camera_forward_axis if self.enable_cameras else None,
         }
 
         # Add file references
@@ -1442,6 +1607,18 @@ class Exporter:
                     f.write(f"  - name: {self._yaml_str(sensor['name'])}\n")
                     f.write(f"    type: {sensor['type']}\n")
                     f.write(f"    joint: {self._yaml_str(sensor['joint'])}\n")
+
+            # Cameras section
+            if self.manifest["cameras"]:
+                f.write("\ncameras:\n")
+                for cam in self.manifest["cameras"]:
+                    f.write(f"  - name: {self._yaml_str(cam['name'])}\n")
+                    f.write(f"    body: {self._yaml_str(cam['body'])}\n")
+                    f.write(f"    fovy: {cam['fovy']}\n")
+                    f.write(f"    forward_axis: {cam['forward_axis']}\n")
+                    if cam.get("pos"):
+                        f.write(f"    pos: [{self._format_float_list(cam['pos'])}]\n")
+                    f.write(f"    euler: [{cam['euler']}]\n")
 
             # Joint processing debug section
             if self.manifest.get("joint_processing"):
@@ -1559,12 +1736,39 @@ class ExportCommandExecuteHandler(adsk.core.CommandEventHandler):
                     enable_sensors_input.value if enable_sensors_input else True
                 )
 
+                # Read camera options
+                enable_cameras_input = inputs.itemById("enable_cameras")
+                enable_cameras = (
+                    enable_cameras_input.value if enable_cameras_input else True
+                )
+
+                camera_name_prefix_input = inputs.itemById("camera_name_prefix")
+                camera_name_prefix = (
+                    camera_name_prefix_input.value if camera_name_prefix_input else "camera"
+                )
+
+                camera_fovy_input = inputs.itemById("camera_fovy")
+                camera_fovy = (
+                    camera_fovy_input.value if camera_fovy_input else 45
+                )
+
+                camera_forward_axis_input = inputs.itemById("camera_forward_axis")
+                camera_forward_axis = "+Z"  # default
+                if camera_forward_axis_input:
+                    axis_options = ["+Z", "-Z", "+X", "-X", "+Y", "-Y"]
+                    idx = camera_forward_axis_input.selectedItem.index
+                    camera_forward_axis = axis_options[idx]
+
                 exporter = Exporter(
                     export_path,
                     debug_mode,
                     enable_actuators,
                     actuator_type,
                     enable_sensors,
+                    enable_cameras,
+                    camera_name_prefix,
+                    camera_fovy,
+                    camera_forward_axis,
                 )
                 exporter.export_all()
             else:
@@ -1646,6 +1850,42 @@ class ExportCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             inputs.addBoolValueInput(
                 "enable_sensors", "Generate Sensors", True, "", True
             )
+
+            # Add Camera Options Header
+            inputs.addTextBoxCommandInput(
+                "camera_header", "", "<b>Camera Options</b>", 1, True
+            )
+
+            # Camera enable checkbox
+            inputs.addBoolValueInput(
+                "enable_cameras", "Generate Cameras", True, "", True
+            )
+
+            # Camera name prefix
+            inputs.addStringValueInput(
+                "camera_name_prefix", "Camera Name Prefix", "camera"
+            )
+
+            # Camera FOV
+            inputs.addValueInput(
+                "camera_fovy",
+                "Camera FOV (degrees)",
+                "",
+                adsk.core.ValueInput.createByReal(45),
+            )
+
+            # Camera forward axis dropdown
+            camera_axis_dropdown = inputs.addDropDownCommandInput(
+                "camera_forward_axis",
+                "Camera Forward Axis",
+                adsk.core.DropDownStyles.LabeledIconDropDownStyle,
+            )
+            camera_axis_dropdown.listItems.add("+Z (Forward)", True, "")
+            camera_axis_dropdown.listItems.add("-Z (Backward)", False, "")
+            camera_axis_dropdown.listItems.add("+X (Right)", False, "")
+            camera_axis_dropdown.listItems.add("-X (Left)", False, "")
+            camera_axis_dropdown.listItems.add("+Y (Up)", False, "")
+            camera_axis_dropdown.listItems.add("-Y (Down)", False, "")
 
         except Exception:
             if _ui:

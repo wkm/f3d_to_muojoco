@@ -8,6 +8,7 @@
 [F3DToMuJoCo]   Occurrence 'l_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
 [F3DToMuJoCo]   Occurrence 'r_wheel:1': pos=(0.0, 0.0, 0.0), 1 bodies
 [F3DToMuJoCo]   Occurrence 'camera:1': pos=(0.0, 0.0, 0.0), 1 bodies
+[F3DToMuJoCo] Detected 1 camera component(s): camera
 [F3DToMuJoCo] Beginning export to /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel
 [F3DToMuJoCo] No physical material on body, using estimated inertial properties
 [F3DToMuJoCo]   No joint found for 'body:1' (rigidly attached to Root)
@@ -25,10 +26,16 @@
 [F3DToMuJoCo]     World origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local origin: (-0.2, 0.1, 0.0)
 [F3DToMuJoCo]     Local axis: (1.000, 0.000, 0.000)
+[F3DToMuJoCo] Attaching 1 camera(s) to body 'body_1'
 [F3DToMuJoCo] No physical material on camera, using estimated inertial properties
-[F3DToMuJoCo]   No joint found for 'camera:1' (rigidly attached to Root)
-[F3DToMuJoCo] Generated 2 contact exclusion(s) to prevent self-collision
-[F3DToMuJoCo] Generated 2 motor actuator(s)
+[F3DToMuJoCo]   No joint found for 'camera:1' (rigidly attached to body:1)
+[F3DToMuJoCo]   Camera 'camera_1_cam' position (front face): (-0.0500, 0.1487, -0.0615)
+[F3DToMuJoCo]     BBox min: (-0.0601, 0.1387, -0.1115)
+[F3DToMuJoCo]     BBox max: (-0.0399, 0.1588, -0.0615)
+[F3DToMuJoCo]     Forward axis: +Z → offset (0, 0, 1)
+[F3DToMuJoCo]   Added camera 'camera_1_cam' (pos=-0.050000 0.148736 -0.061472, fovy=45.0, forward=+Z, euler=0 3.141592653589793 0)
+[F3DToMuJoCo] Generated 3 contact exclusion(s) to prevent self-collision
+[F3DToMuJoCo] Generated 2 position actuator(s)
 [F3DToMuJoCo] Generated 4 sensor(s) (2 position + 2 velocity)
 [F3DToMuJoCo] Saved robot model to bot.xml
 [F3DToMuJoCo] Saved scene to scene.xml

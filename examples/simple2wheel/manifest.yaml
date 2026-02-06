@@ -16,8 +16,12 @@ inputs:
   export_path: /Users/wkm/Code/play/f3d_to_muojoco/examples/simple2wheel
   debug_mode: false
   actuators_enabled: true
-  actuator_type: motor
+  actuator_type: position
   sensors_enabled: true
+  cameras_enabled: true
+  camera_name_prefix: camera
+  camera_fovy: 45.0
+  camera_forward_axis: +Z
 
 model:
   root_component: Simple2Wheel
@@ -64,7 +68,7 @@ components:
     position: [0.000000 0.000000 0.000000]
     quaternion: [1.000000 0.000000 0.000000 0.000000]
   - name: camera_1
-    parent: base
+    parent: body_1
     position: [0.000000 0.000000 0.000000]
     quaternion: [1.000000 0.000000 0.000000 0.000000]
 
@@ -101,12 +105,12 @@ joints:
     axis: [1.000000 0.000000 0.000000]
 
 actuators:
-  - name: Revolute_1_motor
-    type: motor
+  - name: Revolute_1_pos
+    type: position
     joint: Revolute_1
     ctrlrange: [-1 1]
-  - name: Revolute_2_motor
-    type: motor
+  - name: Revolute_2_pos
+    type: position
     joint: Revolute_2
     ctrlrange: [-1 1]
 
@@ -123,6 +127,14 @@ sensors:
   - name: Revolute_2_vel_sensor
     type: jointvel
     joint: Revolute_2
+
+cameras:
+  - name: camera_1_cam
+    body: camera_1
+    fovy: 45.0
+    forward_axis: +Z
+    pos: [-0.050000, 0.148736, -0.061472]
+    euler: [0 3.141592653589793 0]
 
 joint_processing:
   - joint: Revolute_1
